@@ -1,0 +1,7 @@
+__pycache__/
+.DS_Store
+monitor/site/
+data/monitor/raw/*
+!data/monitor/raw/groww_aum.csv
+data/monitor/out/
+data/monitor/dash/

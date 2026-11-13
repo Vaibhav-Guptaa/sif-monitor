@@ -1,0 +1,52 @@
+name: Refresh data and publish site
+
+on:
+  schedule:
+    - cron: "45 18 * * 1-5"   # 00:15 IST Tue-Sat: after AMFI's 11 pm upload for each trading day Mon-Fri
+  workflow_dispatch:           # "Run workflow" button for an on-demand refresh
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Refresh NAVs, portfolios, analytics
+        run: python monitor/run.py
+      - name: Build site
+        run: python monitor/build_site.py
+      - name: Keep new portfolio snapshots and the AUM log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/monitor/portfolios data/monitor/raw/groww_aum.csv data/monitor/ref/groww_ids.json
+          git diff --cached --quiet || { git commit -m "Data refresh $(date -u +%F)"; git push; }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: monitor/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
