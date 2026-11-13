@@ -21,6 +21,7 @@ if __name__ == "__main__":
     print("1/5 NAVs");          fetch_nav.main()
     print("2/5 portfolios");    print("   new AMC files:", fetch_portfolios.arudha() or "none")
     print("   new Groww snapshots:", fetch_portfolios.groww(holdings.FUNDS) or "none")
+    print("   new archived snapshots:", fetch_portfolios.wayback(holdings.FUNDS) or "none")
     print("3/5 analytics");     analytics.main()
     print("4/5 holdings");      holdings.main()
     print("5/5 build");         build.main()

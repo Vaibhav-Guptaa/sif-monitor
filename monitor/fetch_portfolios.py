@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PORT = ROOT / "data" / "monitor" / "portfolios"
 IDS = ROOT / "data" / "monitor" / "ref" / "groww_ids.json"
 AUMLOG = ROOT / "data" / "monitor" / "raw" / "groww_aum.csv"
+WBSEEN = ROOT / "data" / "monitor" / "ref" / "wayback_seen.json"
 MONTHS = {m: i + 1 for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])}
 
 
@@ -111,6 +112,63 @@ def groww(funds: dict[str, tuple]) -> list[str]:
         if new_file:
             w.writeheader()
         w.writerows(log)
+    return got
+
+
+def wayback(funds: dict[str, tuple]) -> list[str]:
+    """Past portfolios from Internet Archive (web.archive.org) copies of each fund's Groww page. Each archived page
+    embeds the portfolio Groww showed that day (same fields as the live API). Saved as groww_<portfolio date>.json
+    unless that month is already held. Archive timestamps already read are remembered in ref/wayback_seen.json."""
+    ids = json.loads(IDS.read_text()) if IDS.exists() else {}
+    seen = set(json.loads(WBSEEN.read_text())) if WBSEEN.exists() else set()
+    got = []
+    for fund, (code, brand, *_rest) in funds.items():
+        sid = ids.get(fund)
+        if not sid:
+            continue
+        cdx = ("https://web.archive.org/cdx/search/cdx?output=json&fl=timestamp&filter=statuscode:200"
+               f"&url=groww.in/mutual-funds/{sid}")
+        try:
+            rows = json.loads(S.get(cdx) or b"[]")[1:]
+        except Exception as exc:
+            print(f"  ? archive index {fund}: {exc}")
+            continue
+        time.sleep(1)
+        have = {p.stem.split("_")[1][:7] for p in (PORT / fund).glob("groww_*.json")} if (PORT / fund).exists() else set()
+        have |= {re.search(r"(\d{4}-\d{2})", p.name).group(1) for p in (PORT / fund).glob(f"{fund}_hybrid_*.xlsx")} if (PORT / fund).exists() else set()
+        for (ts,) in rows:
+            key = f"{fund}/{ts}"
+            if key in seen:
+                continue
+            url = f"https://web.archive.org/web/{ts}id_/https://groww.in/mutual-funds/{sid}"
+            try:
+                html = S.get(url).decode("utf-8", "replace")
+            except Exception as exc:
+                print(f"  ? archive page {key}: {exc}")
+                continue
+            time.sleep(1)
+            seen.add(key)
+            m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+            doc = (json.loads(m.group(1)).get("props", {}).get("pageProps", {}).get("mfServerSideData") or {}) if m else {}
+            H = doc.get("holdings") or []
+            if doc.get("scheme_code") != code or not H:
+                continue
+            pd_ = max(h["portfolio_date"] for h in H if h.get("portfolio_date"))
+            pdate = S.datetime.fromisoformat(pd_.replace("Z", "+00:00")).astimezone(S.IST).date().isoformat()
+            if pdate[:7] in have:
+                continue
+            implied = sorted(h["market_value"] / (h["corpus_per"] / 100) for h in H
+                             if h.get("corpus_per") and abs(h["corpus_per"]) > 2 and h.get("market_value"))
+            aum = doc.get("aum") or (round(implied[len(implied) // 2], 2) if implied else None)
+            keep = {k: doc.get(k) for k in ("scheme_code", "scheme_name", "isin", "nav", "nav_date", "search_id")}
+            keep.update(aum=aum, portfolio_date=pdate, fetched=datetime.now().isoformat(timespec="seconds"),
+                        source=f"Internet Archive copy of Groww's page, {ts}: {url}", holdings=H)
+            dest = PORT / fund / f"groww_{pdate}.json"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(json.dumps(keep, indent=1))
+            have.add(pdate[:7])
+            got.append(f"{fund}/{dest.name}")
+    WBSEEN.write_text(json.dumps(sorted(seen), indent=0))
     return got
 
 
