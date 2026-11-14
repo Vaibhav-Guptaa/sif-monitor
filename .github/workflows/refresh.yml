@@ -30,8 +30,10 @@ jobs:
         run: python monitor/run.py
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      - name: Build site
-        run: python monitor/build_site.py
+      - name: Build site (sealed with the access code; refuses to publish an unlocked site)
+        run: python monitor/build_site.py --require-password
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
       - name: Keep new portfolio snapshots and the AUM log
         run: |
           git config user.name "github-actions[bot]"

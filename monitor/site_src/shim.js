@@ -38,6 +38,11 @@
   window.SIF_BOOT = async function (pageScript) {
     await Promise.all(NAMES.map(async (n) => {
       try {
+        if (window.SIF_DATA) {   // locked site: CSV text comes from the decrypted bundle
+          if (window.SIF_DATA[n] === undefined) throw new Error('missing');
+          store[n] = { status: 'ok', data: d3.csvParse(window.SIF_DATA[n]) };
+          return;
+        }
         const r = await fetch('data/' + n + '.csv', { cache: 'no-cache' });
         if (!r.ok) throw new Error(r.status);
         store[n] = { status: 'ok', data: d3.csvParse(await r.text()) };
