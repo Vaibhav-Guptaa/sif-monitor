@@ -34,6 +34,9 @@ jobs:
         run: python monitor/build_site.py --require-password
         env:
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+          SITE_PASSWORD_2: ${{ secrets.SITE_PASSWORD_2 }}
+          SITE_PASSWORD_3: ${{ secrets.SITE_PASSWORD_3 }}
+          SITE_PASSWORD_4: ${{ secrets.SITE_PASSWORD_4 }}
       - name: Keep new portfolio snapshots and the AUM log
         run: |
           git config user.name "github-actions[bot]"

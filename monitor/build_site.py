@@ -87,28 +87,37 @@ def main() -> None:
     shutil.copy(HERE / "site_src" / "shim.js", SITE / "shim.js")
     for f in files:
         shutil.copy(DATA / f, SITE / "data" / f)
-    pw = os.environ.get("SITE_PASSWORD", "")
-    if pw:
-        lock(pw, html, files)
+    codes = [c for c in (os.environ.get(k, "").strip() for k in ("SITE_PASSWORD", "SITE_PASSWORD_2", "SITE_PASSWORD_3", "SITE_PASSWORD_4")) if c]
+    pw = bool(codes)
+    if codes:
+        lock(codes, html, files)
     elif "--require-password" in sys.argv:
         sys.exit("SITE_PASSWORD is not set: refusing to publish an unlocked site")
     size = sum(p.stat().st_size for p in SITE.rglob("*") if p.is_file())
     print(f"site built: {SITE}  ({size/1024:.0f} KB, {len(files)} data files, {'locked' if pw else 'open'})")
 
 
-def lock(pw: str, html: str, files: list[str]) -> None:
+def lock(codes: list[str], html: str, files: list[str]) -> None:
     """Replace the open site with an access-code gate. The dashboard (page body, code, every data file) is gzipped
-    and sealed with AES-256-GCM under a key derived from the code (PBKDF2-SHA256); only the sealed payload ships."""
+    and sealed with AES-256-GCM under a fresh random master key; the master key is then sealed once per access code
+    (key from PBKDF2-SHA256). Any one code opens it; dropping a code's secret revokes only that code."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     import hashlib
+    import random
     body = html.split('<div class="site-wrap">', 1)[1].rsplit("</div>\n<script", 1)[0]
     bundle = {"body": body, "js": (SITE / "sif.js").read_text(),
               "data": {f[:-4]: (SITE / "data" / f).read_text() for f in files}}
-    salt, iv = secrets.token_bytes(16), secrets.token_bytes(12)
-    key = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, ITER, 32)
-    ct = AESGCM(key).encrypt(iv, gzip.compress(json.dumps(bundle).encode(), 9), None)
+    master, iv, salt = secrets.token_bytes(32), secrets.token_bytes(12), secrets.token_bytes(16)
+    ct = AESGCM(master).encrypt(iv, gzip.compress(json.dumps(bundle).encode(), 9), None)
     b64 = lambda b: base64.b64encode(b).decode()
-    (SITE / "payload.json").write_text(json.dumps({"v": 1, "iter": ITER, "salt": b64(salt), "iv": b64(iv), "ct": b64(ct)}))
+    slots = []
+    for code in codes:
+        kek = hashlib.pbkdf2_hmac("sha256", code.encode(), salt, ITER, 32)
+        siv = secrets.token_bytes(12)
+        slots.append({"iv": b64(siv), "k": b64(AESGCM(kek).encrypt(siv, master, None))})
+    random.SystemRandom().shuffle(slots)   # slot order says nothing about which code is which
+    (SITE / "payload.json").write_text(json.dumps({"v": 2, "iter": ITER, "salt": b64(salt), "iv": b64(iv), "ct": b64(ct), "slots": slots}))
+    print(f"  locked with {len(codes)} access code(s)")
     shutil.rmtree(SITE / "data")
     (SITE / "sif.js").unlink()
     head = html.split("<body>", 1)[0]
@@ -159,7 +168,13 @@ GATE = """<body>
   async function unlock(code) {
     const p = await getPayload();
     const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(p.salt), iterations: p.iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const kek = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(p.salt), iterations: p.iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    let master = null;
+    for (const s of p.slots) {   // each access code has its own sealed copy of the master key
+      try { master = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(s.iv) }, kek, b64(s.k)); break; } catch (e) {}
+    }
+    if (!master) throw new Error('wrong code');
+    const key = await crypto.subtle.importKey('raw', master, 'AES-GCM', false, ['decrypt']);
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(p.iv) }, key, b64(p.ct));
     const text = await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
     return JSON.parse(text);
