@@ -142,7 +142,7 @@
     }
   }
   function redraw(...names) { for (const n of names) dash.draw(n); }
-  const ALL = ['chips', 'score', 'ts', 'scatter', 'scnote', 'cons', 'constitle', 'constable', 'fundsel', 'ddtiles', 'hist', 'histnote', 'periodsel', 'trades', 'hold', 'holdnote', 'aum', 'aumtitle', 'aumnote', 'attr'];
+  const ALL = ['chips', 'score', 'ts', 'scatter', 'scnote', 'cons', 'constitle', 'consnum', 'constable', 'fundsel', 'ddtiles', 'hist', 'histnote', 'periodsel', 'trades', 'hold', 'holdnote', 'aum', 'aumtitle', 'aumnote', 'attr'];
 
   function winStart(F, lastDate) {
     const days = { '1m': 30, '3m': 91, '6m': 182, '1y': 365 }[S.win];
@@ -726,6 +726,31 @@
         if (opts.length) svg.append('text').attr('x', W - m.r + 12).attr('y', yy + 22).attr('dy', '0.32em').text(opts.join(', ')).style('font-size', '10px');
       }
     });
+  });
+
+  // the same breakdown as a table with named columns (readable without colours, copies cleanly)
+  dash.draw('consnum', (el) => {
+    const L = allocLatest(); el.replaceChildren(); if (!L) return;
+    const list = [...L.values()].filter(allocIn);
+    if (!list.length) return;
+    const vals = list.map((r) => ({ r, v: segVals(r), o: overlay(r) }));
+    const cols = SEGS.filter(([k]) => vals.some((x) => (x.v[k] || 0) > 0.05));
+    const eqSum = (v) => SEGS.filter((s_) => s_[4] === 'eq').reduce((t_, s_) => t_ + (v[s_[0]] || 0), 0);
+    vals.sort((a, b) => eqSum(b.v) - eqSum(a.v));
+    const tab = document.createElement('table');
+    const hr = document.createElement('tr');
+    for (const h of ['Fund', 'Portfolio date', 'AUM then, ₹ cr', ...cols.map((c) => c[1] + ', %'), 'Total, %', 'Beyond the 100: futures, % of NAV', 'Options on stocks not held / Nifty puts']) { const th = document.createElement('th'); th.textContent = h; hr.append(th); }
+    const thead = document.createElement('thead'); thead.append(hr); tab.append(thead);
+    const tb = document.createElement('tbody');
+    for (const { r, v, o } of vals) {
+      const tr = document.createElement('tr');
+      const fut = [o.longFut > 0.05 ? 'long ' + sg1(o.longFut) : '', o.shortFut < -0.05 ? 'short ' + f1(o.shortFut) : '', Math.abs(o.idx) > 0.05 ? 'index ' + sg1(o.idx) : ''].filter(Boolean).join(', ') || 'none';
+      const opt = [o.nPut ? o.nPut + ' naked puts' : '', o.nCall ? o.nCall + ' naked calls' : '', o.nStr ? o.nStr + ' strangles' : '', o.nU ? o.nU + ' options (type n/a)' : '', o.idxPB ? o.idxPB + ' Nifty puts' : ''].filter(Boolean).join(', ') || 'none';
+      const cells = [allocLabel(r), fmtDate(parseDate(r.asof)), r.aum_cr ? f0(+r.aum_cr) : '–', ...cols.map(([k]) => ((v[k] || 0) > 0.05 ? f1(v[k]) : '–')), f1(d3.sum(Object.values(v))), fut, opt];
+      cells.forEach((c, i) => { const td = document.createElement('td'); td.textContent = c; if (i >= 2 && i < 3 + cols.length + 1) td.className = 'n'; else if (i > 0) td.className = 'l'; tr.append(td); });
+      tb.append(tr);
+    }
+    tab.append(tb); el.append(tab);
   });
   dash.draw('constable', (tb) => {
     const c = dash.data('construction');

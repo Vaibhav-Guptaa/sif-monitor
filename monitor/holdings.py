@@ -410,7 +410,9 @@ def parse_groww_api(path: Path, fund: str):
         lines.append(dict(name=name, isin="", ind=h.get("sector_name") or "", qty=None,
                           mv_lakh=(h["market_value"] or 0) * 100, pct=h["corpus_per"] or 0.0, section="", kind=kind,
                           opt=ot, under=underlying_name(name) if kind in ("FUT", "OPT", "IDXFUT", "IDXOPT") else name))
-    return dict(fund=fund, asof=d["portfolio_date"], net_assets_cr=d.get("aum"), lines=lines, source="groww",
+    # net assets = the portfolio's own market values summed (Groww's 'aum' field can move to a later month-end)
+    net = sum((h.get("market_value") or 0) for h in d["holdings"]) or d.get("aum")
+    return dict(fund=fund, asof=d["portfolio_date"], net_assets_cr=net, lines=lines, source="groww",
                 file=path.name)
 
 

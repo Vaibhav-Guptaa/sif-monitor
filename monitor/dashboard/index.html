@@ -219,6 +219,10 @@
     <div data-draw="conskey"></div>
     <p class="note">Each fund's equity is split stock by stock: a share held against a short future on the same stock is arbitrage; a share with a call written on it is a covered call, and so on, so every rupee lands in exactly one bucket. Option legs are assumed to cover the whole stock position (disclosures give premiums, not quantities). <b>Beyond the 100</b> (right of each bar): futures need only margin, so they add exposure without using NAV; long futures act like owning the share, short futures on stocks not held are naked shorts, index futures add or remove Nifty exposure. Options sold on stocks the fund does not hold, and Nifty puts bought, are counted there by number of positions. <b>Black line</b>: share of NAV that moves with share prices before options. <b>White diamond</b>: exposure the daily NAV showed over 60 days (beta × 100). The first row is the family total, weighted by AUM.</p>
     <div class="sif-chart sm" id="cons-chart" data-draw="cons" data-source="alloc families"></div>
+    <details open>
+      <summary>The same numbers as a table</summary>
+      <div class="sif-tablewrap" data-draw="consnum" data-source="alloc families"></div>
+    </details>
     <div class="sif-tablewrap">
       <table id="cons-table" data-source="construction" data-row-key="fund">
         <thead><tr>
