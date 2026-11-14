@@ -41,7 +41,8 @@
     const out = d.map((r) => {
       const o = { ...r };
       for (const k of Object.keys(r)) if (!['id', 'kind', 'brand', 'sponsor', 'name', 'category', 'isin', 'first_date', 'last_date', 'fund'].includes(k) && !k.endsWith('_date')) o[k] = num(r[k]);
-      if (r.kind === 'SIF' && r.first_date && r.last_date) o.days_live = Math.round((parseDate(r.last_date) - parseDate(r.first_date)) / 864e5);
+      if (r.first_date && r.last_date) o.span_days = Math.round((parseDate(r.last_date) - parseDate(r.first_date)) / 864e5);
+      if (r.kind === 'SIF' && Number.isFinite(o.span_days)) o.days_live = o.span_days;
       return o;
     });
     cache.set(d, out); return out;
@@ -313,7 +314,10 @@
           const isRet = c.startsWith('ret_') || c === 'cagr' || c === 'alpha';
           const isBeta = c.startsWith('beta') || c.startsWith('sharpe');
           const isPct = isRet || c.startsWith('vol') || c === 'max_dd' || c === 'dd_now' || c.endsWith('capture');
-          td.textContent = c === 'days_live' ? fx(v, f0) : fx(v, isBeta ? f2 : isRet ? sg1 : (c.endsWith('capture') ? f0 : f1)) + (isPct && Number.isFinite(v) ? '%' : '');
+          const young = Number.isFinite(f.span_days) && f.span_days < 365;
+          const extrap = Number.isFinite(v) && ((S.annual && (c === 'ret_3m' || c === 'ret_6m' || (c === 'ret_inception' && young))) || c === 'sharpe_6m' || (c === 'sharpe_life' && young));
+          td.textContent = c === 'days_live' ? fx(v, f0) : fx(v, isBeta ? f2 : isRet ? sg1 : (c.endsWith('capture') ? f0 : f1)) + (isPct && Number.isFinite(v) ? '%' : '') + (extrap ? '†' : '');
+          if (extrap) td.title = 'Annualised from less than a year of data: an extrapolation, not a realised return';
           if (f[c + '_date']) td.title = 'on ' + fmtDate(parseDate(f[c + '_date']));
           if ((isRet || c === 'dd_now' || c === 'max_dd') && v < 0 && f.kind === 'SIF' && isRet) td.classList.add('bad');
         }
@@ -486,14 +490,14 @@
       const days = Math.max((a[a.length - 1].date - a[0].date) / 864e5, 1);
       const ann = (Math.pow(1 + ret / 100, 365 / days) - 1) * 100;
       const sh = NO_SHARPE.has(s.id) || !Number.isFinite(vol) || vol <= 0 ? NaN : (ann / 100 - 0.05) / (vol / 100);
-      return { s, ret, ann, vol, sh, mdd, beta, from: a[0].date };
+      return { s, ret, ann, vol, sh, mdd, beta, from: a[0].date, short: days < 365 };
     }).sort((p, q) => q.ann - p.ann);
     for (const r of rowsS) {
       const tr = document.createElement('tr'); if (r.s.kind === 'bench') tr.className = 'bench';
       const td0 = document.createElement('td'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = tsColor(r.s);
       td0.append(sw, document.createTextNode(r.s.name + (r.from > dom.a ? ' *' : ''))); tr.append(td0);
-      for (const [v, f, bad] of [[r.ann, sg1, r.ann < 0], [r.ret, sg1, r.ret < 0], [r.vol, f1, false], [r.sh, f2, r.sh < 0], [r.mdd, f1, r.mdd < -2], [r.beta, f2, false]]) {
-        const td = document.createElement('td'); td.className = 'n' + (bad && r.s.kind === 'hl' ? ' bad' : ''); td.textContent = fx(v, f); tr.append(td);
+      for (const [v, f, bad, dag] of [[r.ann, sg1, r.ann < 0, r.short], [r.ret, sg1, r.ret < 0], [r.vol, f1, false], [r.sh, f2, r.sh < 0, r.short], [r.mdd, f1, r.mdd < -2], [r.beta, f2, false]]) {
+        const td = document.createElement('td'); td.className = 'n' + (bad && r.s.kind === 'hl' ? ' bad' : ''); td.textContent = fx(v, f) + (dag && Number.isFinite(v) ? '†' : ''); if (dag) td.title = 'Annualised from less than a year: an extrapolation'; tr.append(td);
       }
       tb.append(tr);
     }
@@ -524,7 +528,7 @@
   // ---------- scatter ----------
   const WIN_FIELD = { '1m': 'ret_1m_ann', '3m': 'ret_3m_ann', '6m': 'ret_6m_ann', '1y': 'ret_1y_ann', all: 'ret_inception_ann', common: 'ret_inception_ann' };
   const WIN_NAME = { '1m': '1 month', '3m': '3 months', '6m': '6 months', '1y': '1 year', all: 'since launch', common: 'since launch' };
-  dash.draw('scnote', (el) => { el.textContent = 'Return over ' + WIN_NAME[S.win] + ', % a year'; });
+  dash.draw('scnote', (el) => { el.textContent = 'CAGR over ' + WIN_NAME[S.win] + (['3m', '6m'].includes(S.win) ? ' (annualised from under a year: extrapolated)' : ''); });
   dash.draw('scatter', (el) => {
     const F = funds(); if (!F) { failNote(el, dash.data('funds').status); return; }
     ensureHL(F);
@@ -559,7 +563,7 @@
       c.on('pointerenter', () => {
         tip.attr('hidden', null).html('');
         tip.append('div').text(label(p.f)).style('font-weight', 600);
-        const r1 = tip.append('div').attr('class', 'row'); r1.append('span').text('Return, % a year'); r1.append('span').text(sg1(p.y) + '%');
+        const r1 = tip.append('div').attr('class', 'row'); r1.append('span').text('CAGR' + (Number.isFinite(p.f.span_days) && p.f.span_days < 365 && !['1m'].includes(S.win) ? ' (extrapolated)' : '')); r1.append('span').text(sg1(p.y) + '%');
         const r2 = tip.append('div').attr('class', 'row'); r2.append('span').text('Volatility'); r2.append('span').text(f1(p.x) + '%');
         const r3 = tip.append('div').attr('class', 'row'); r3.append('span').text('Beta 60d'); r3.append('span').text(fx(p.f.beta_60d, f2));
         const tw = tip.node().offsetWidth; tip.style('left', (cx + 12 + tw > W ? cx - tw - 12 : cx + 12) + 'px').style('top', Math.max(0, cy - 30) + 'px');

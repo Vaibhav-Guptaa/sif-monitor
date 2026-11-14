@@ -159,19 +159,19 @@
         <p class="note" id="ts-period">—</p>
         <div class="sif-tablewrap">
           <table id="ts-stats-table">
-            <thead><tr><th>Line</th><th title="Return, % a year">Ret % yr</th><th title="Return for the period, %">Ret % period</th><th title="Volatility, % a year">Vol %</th><th title="Sharpe ratio, risk-free 5%">Sharpe</th><th title="Worst drawdown in the period, %">Max DD %</th><th>Beta</th></tr></thead>
+            <thead><tr><th>Line</th><th title="Compound annual growth rate over the period">CAGR %</th><th title="Return for the period, %">Ret % period</th><th title="Volatility, % a year">Vol %</th><th title="Sharpe ratio, risk-free 5%">Sharpe</th><th title="Worst drawdown in the period, %">Max DD %</th><th>Beta</th></tr></thead>
             <tbody id="ts-stats"></tbody>
           </table>
         </div>
-        <p class="note">Ret % yr compounds the period return over its actual days; Ret % period is the plain return. Sharpe = (Ret % yr − 5%) ÷ Vol. Volatility, Sharpe (risk-free 5%) and beta from daily returns inside the period; beta is against Nifty 50. * = launched after the period start, measured from launch.</p>
+        <p class="note">CAGR compounds the period return over its actual days; † = period under a year, so CAGR and Sharpe are extrapolations. Ret % period is the plain, realised return. Sharpe = (CAGR − 5%) ÷ Vol. Volatility, Sharpe (risk-free 5%) and beta from daily returns inside the period; beta is against Nifty 50. * = launched after the period start, measured from launch.</p>
       </div>
     </div>
     <p class="note">Pick a period with the window buttons, the date boxes, or by dragging across the strip under the chart (drag the shaded box to move it, click outside it to reset). It applies to every metric. Growth rebases each line to 100 at the period start (or at launch if later); drawdown is measured from the peak inside the period. Trailing 6- and 12-month returns are the plain return over the past 182 or 365 days at each date, so a fund appears once it is that old; the 6-month Sharpe annualises that return, subtracts 5% and divides by the 6-month volatility. Rolling volatility is annualised; rolling 60-day beta needs 40 of the last 60 sessions, 20-day beta 15 of the last 20. The 20-day beta reacts fast but is noisy: one big Nifty day moves it a lot. The category and window also set the scoreboard and scatter.</p>
   </section>
 
   <section class="sif-panel" id="scoreboard">
-    <header><h2>Scoreboard</h2><span class="sif-seg" id="sif-annual" role="group" aria-label="Return basis"><button type="button" data-annual="annual" class="on" aria-pressed="true">Returns % a year</button><button type="button" data-annual="period">% for the period</button></span></header>
-    <p class="note">Direct Plan Growth. Returns from 3M up are annualised by default (compounded over the actual days), so funds of different ages compare on one footing; 1M stays the plain month's return, since a month compounded to a year is noise. Read 3M with care. Days live counts calendar days from the first NAV to the latest. Click a column to sort.</p>
+    <header><h2>Scoreboard</h2><span class="sif-seg" id="sif-annual" role="group" aria-label="Return basis"><button type="button" data-annual="annual" class="on" aria-pressed="true">CAGR (annualised)</button><button type="button" data-annual="period">% for the period</button></span></header>
+    <p class="note">Direct Plan Growth. Returns from 3M up are shown as CAGR by default (compounded over the actual days), so funds of different ages compare on one footing. <b>† marks a CAGR or Sharpe ratio annualised from less than a year of data: an extrapolation of the period's pace, not a realised return.</b> 1M stays the plain month's return, since a month compounded to a year is noise. Days live counts calendar days from the first NAV to the latest. Click a column to sort.</p>
     <div class="sif-tablewrap">
       <table id="score-table" data-source="funds" data-row-key="id">
         <thead><tr>
