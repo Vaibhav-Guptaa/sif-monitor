@@ -675,7 +675,7 @@
     const meas = svg.append('g');
     const lw = d3.max(rowsAll, (x) => meas.append('text').text(x.r.total ? x.r.brand : allocLabel(x.r)).node().getComputedTextLength()) + 14; meas.remove();
     const wide = W > 760;
-    const m = { t: 18, r: wide ? 250 : 10, b: 24, l: Math.max(lw, 70) };
+    const m = { t: 18, r: wide ? 290 : 10, b: 24, l: Math.max(lw, 70) };
     const x = d3.scaleLinear().domain([0, 100]).range([m.l, W - m.r]);
     svg.append('g').attr('class', 'grid').attr('transform', `translate(0,${m.t + RH * rowsAll.length})`).call(d3.axisBottom(x).ticks(10).tickSize(-(RH * rowsAll.length)).tickFormat(''));
     svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${m.t + RH * rowsAll.length + 2})`).call(d3.axisBottom(x).ticks(10).tickFormat((d) => d + '%'));
@@ -739,7 +739,9 @@
     vals.sort((a, b) => eqSum(b.v) - eqSum(a.v));
     const tab = document.createElement('table');
     const hr = document.createElement('tr');
-    for (const h of ['Fund', 'Portfolio date', 'AUM then, ₹ cr', ...cols.map((c) => c[1] + ', %'), 'Total, %', 'Beyond the 100: futures, % of NAV', 'Options on stocks not held / Nifty puts']) { const th = document.createElement('th'); th.textContent = h; hr.append(th); }
+    const SHORT = { arb: 'Arbitrage', cc: 'Covered call', cc_put: 'Cov. call + put', collar: 'Collar', prot: 'Protective put', pheld: 'Stock + put written', ow: 'Options written (type n/a)', ipo: 'IPO / new listing', open: 'Plain long', optb: 'Options bought', reit: 'REIT / InvIT', units: 'Fund units', gsec: 'G-sec', corp: 'Corporate bonds', mm: 'Money market', cash: 'Cash & margin', resid: 'Debt & cash' };
+    const heads = [['Fund', ''], ['As of', 'Portfolio date'], ['AUM then, ₹ cr', 'Net assets in this portfolio'], ...cols.map((c) => [SHORT[c[0]] + ' %', c[1] + ': ' + c[2]]), ['Total %', ''], ['Futures beyond the 100, % NAV', 'Long, short and index futures at full value; they need only margin, which sits in cash'], ['Options on stocks not held', 'Count of option positions on stocks the fund does not own, and Nifty puts bought']];
+    for (const [h, tip_] of heads) { const th = document.createElement('th'); th.textContent = h; if (tip_) th.title = tip_; hr.append(th); }
     const thead = document.createElement('thead'); thead.append(hr); tab.append(thead);
     const tb = document.createElement('tbody');
     for (const { r, v, o } of vals) {

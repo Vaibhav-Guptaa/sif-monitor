@@ -82,7 +82,9 @@
 .sif-attr-h { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; font-size: 13px; }
 .sif .pill.flag { font-weight: 600; background: var(--color-panel); }
 .sif .pill.ipo { border-color: #1e293b; color: #1e293b; font-size: 10.5px; }
-.sif-tablewrap { overflow-x: auto; min-width: 0; }
+.sif-tablewrap { overflow-x: auto; min-width: 0; max-width: 100%; }
+.sif-panel > *, .sif details { min-width: 0; max-width: 100%; }   /* a wide table scrolls inside its box, never widens the page */
+.sif [data-draw="consnum"] th { white-space: normal; min-width: 58px; max-width: 96px; line-height: 1.25; }
 .sif table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); }
 .sif th { text-align: right; font-weight: 600; color: var(--color-fg-muted); padding: 6px 8px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; vertical-align: bottom; }
 .sif th:first-child, .sif td:first-child, .sif th.l, .sif td.l { text-align: left; }
