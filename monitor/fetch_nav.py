@@ -25,11 +25,11 @@ import sources as S  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "monitor" / "raw"
 
-SPONSOR = {  # brand -> sponsoring AMC (from SEBI registrations / AMC sites)
+SPONSOR = {  # brand -> sponsoring AMC; fallback only: build.py takes the fund house from Groww's scheme record
     "Altiva": "Edelweiss", "Apex": "Aditya Birla Sun Life", "Arudha": "Bandhan", "Magnum": "SBI",
     "Platinum": "Mirae Asset", "Titanium": "Tata", "iSIF": "ICICI Prudential", "qsif": "quant",
     "Infinity": "Kotak", "Prism": "Jio BlackRock", "RedHex": "HSBC", "DynaSIF": "360 ONE",
-    "Summit": "Invesco", "Sapphire": "Franklin Templeton", "Select": "Sundaram", "WSIF": "WhiteOak",
+    "Summit": "Invesco", "Sapphire": "Franklin Templeton", "Select": "Sundaram", "WSIF": "The Wealth Company",
 }
 
 

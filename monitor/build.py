@@ -68,6 +68,16 @@ def _risk(txt: str) -> str:
     return m.group(1) if m else ""
 
 
+def _house(groww: str, typed, brand: str) -> str:
+    """Fund house from Groww's scheme record (same as AMFI's AMC listing); the hand-typed map is only a fallback,
+    and any disagreement is printed so a wrong entry cannot slip through."""
+    g = re.sub(r"\s*(Mutual Fund|Asset Management.*|AMC.*)$", "", str(groww or "")).strip()
+    t = typed.strip() if isinstance(typed, str) else ""
+    if g and t and not (t.lower().replace(" ", "") in g.lower().replace(" ", "") or g.lower().replace(" ", "") in t.lower().replace(" ", "")):
+        print(f"  ! fund house for {brand}: typed '{t}' but Groww says '{g}'; using Groww")
+    return g or t
+
+
 def families() -> pd.DataFrame:
     st = pd.read_csv(RAW / "strategies.csv")
     sc = pd.read_csv(RAW / "schemes.csv") if (RAW / "schemes.csv").exists() else pd.DataFrame(columns=["code"])
@@ -83,8 +93,7 @@ def families() -> pd.DataFrame:
         gv = (lambda k: g.get(k) if hasattr(g, "get") and pd.notna(g.get(k)) else "")
         bench = _pick(d, "benchmark", avoid=("tier 2",)) or _pick(d, "bench")
         rows.append(dict(
-            family=s_["brand"], amc=(s_["sponsor"] if isinstance(s_["sponsor"], str) and s_["sponsor"].strip() else
-                                     re.sub(r"\s*(Mutual Fund|Asset Management.*|AMC.*)$", "", str(gv("fund_house") or "")).strip() or a.get("sif_name", "")), code=s_["code"], strategy=s_["scheme"], category=s_["category"],
+            family=s_["brand"], amc=_house(gv("fund_house"), s_["sponsor"], s_["brand"]), code=s_["code"], strategy=s_["scheme"], category=s_["category"],
             type=("Interval" if "interval" in (a.get("type", "") or "").lower() else "Open-ended" if a.get("type") else ""),
             launch=a.get("launch") or s_.get("first_nav_date", ""), first_nav=s_.get("first_nav_date", ""),
             aum_sep_cr=gv("portfolio_net_assets_cr") if gv("portfolio_date") == "2026-09-30" else "",

@@ -41,6 +41,7 @@
     const out = d.map((r) => {
       const o = { ...r };
       for (const k of Object.keys(r)) if (!['id', 'kind', 'brand', 'sponsor', 'name', 'category', 'isin', 'first_date', 'last_date', 'fund'].includes(k) && !k.endsWith('_date')) o[k] = num(r[k]);
+      if (r.kind === 'SIF' && r.first_date && r.last_date) o.days_live = Math.round((parseDate(r.last_date) - parseDate(r.first_date)) / 864e5);
       return o;
     });
     cache.set(d, out); return out;
@@ -105,7 +106,7 @@
   }
   const fcr = (v) => (Number.isFinite(v) ? '₹' + f0(v) + ' cr' : '–');
   // Fund names always read 'Platform (fund house)', plus that fund's AUM where it helps identify it
-  const AMC_SHORT = { 'Aditya Birla Sun Life': 'Aditya Birla', 'ICICI Prudential': 'ICICI Pru', 'Franklin Templeton': 'Franklin', 'Mahindra Manulife': 'Mahindra' };
+  const AMC_SHORT = { 'Aditya Birla Sun Life': 'Aditya Birla', 'ICICI Prudential': 'ICICI Pru', 'Franklin Templeton': 'Franklin', 'Mahindra Manulife': 'Mahindra', 'Kotak Mahindra': 'Kotak', 'Quant': 'quant', 'JioBlackRock': 'Jio BlackRock' };
   function fmeta(code) { const R = fams(); const r = R ? R.find((x) => x.code === code) : null; return r ? { amc: AMC_SHORT[r.amc] || r.amc, aum: r.aum } : {}; }
   const withHouse = (brand, code, category) => { const m_ = fmeta(code); return brand + (m_.amc ? ' (' + m_.amc + ')' : '') + (S.cat === 'all' && category ? ' ' + (CAT_SHORT[category] || '') : ''); };
   const aumTxt = (code) => { const m_ = fmeta(code); return Number.isFinite(m_.aum) && m_.aum > 0 ? '₹' + d3.format(',.0f')(m_.aum) + ' cr' : ''; };
@@ -176,7 +177,7 @@
   for (const th of document.querySelectorAll('#score-table th button[data-sort]')) {
     th.addEventListener('click', () => {
       const k = th.getAttribute('data-sort');
-      S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : (k === 'brand' || k === 'first_date' ? 1 : -1) };
+      S.sort = { key: k, dir: S.sort.key === k ? -S.sort.dir : (k === 'brand' || k === 'first_date' || k === 'days_live' ? 1 : -1) };
       redraw('score');
     });
   }
@@ -262,7 +263,7 @@
   const retKey = (c) => (S.annual && c.startsWith('ret_') && c !== 'ret_1m' ? c + '_ann' : c);   // a month annualised (x12) is noise
   const NO_SHARPE = new Set(['debt65', 'liquid']);   // near-zero volatility makes their Sharpe meaningless
   seg('sif-annual', 'data-annual', 'annualStr', () => { S.annual = S.annualStr !== 'period'; redraw('score', 'scatter', 'scnote'); });
-  const SCORE_COLS = ['brand', 'first_date', 'aum', 'ret_1m', 'ret_3m', 'ret_6m', 'ret_1y', 'ret_inception', 'vol_life', 'vol_1y', 'vol_60d', 'vol60_max_12m', 'vol60_min_12m', 'beta_life', 'beta_dimson', 'beta_60d', 'beta_20d', 'beta60_max_12m', 'beta60_min_12m', 'alpha', 'sharpe_life', 'sharpe_6m', 'sharpe_1y', 'max_dd', 'dd_now', 'up_capture', 'down_capture'];
+  const SCORE_COLS = ['brand', 'first_date', 'days_live', 'aum', 'ret_1m', 'ret_3m', 'ret_6m', 'ret_1y', 'ret_inception', 'vol_life', 'vol_1y', 'vol_60d', 'vol60_max_12m', 'vol60_min_12m', 'beta_life', 'beta_dimson', 'beta_60d', 'beta_20d', 'beta60_max_12m', 'beta60_min_12m', 'alpha', 'sharpe_life', 'sharpe_6m', 'sharpe_1y', 'max_dd', 'dd_now', 'up_capture', 'down_capture'];
   dash.draw('score', (tb) => {
     const F = funds(); if (!F) { tb.replaceChildren(); return; }
     ensureHL(F);
@@ -305,7 +306,8 @@
           const v = NO_SHARPE.has(f.id) && c.startsWith('sharpe') ? NaN : f[retKey(c)];
           const isRet = c.startsWith('ret_') || c === 'cagr' || c === 'alpha';
           const isBeta = c.startsWith('beta') || c.startsWith('sharpe');
-          td.textContent = fx(v, isBeta ? f2 : isRet ? sg1 : (c.endsWith('capture') ? f0 : f1));
+          const isPct = isRet || c.startsWith('vol') || c === 'max_dd' || c === 'dd_now' || c.endsWith('capture');
+          td.textContent = c === 'days_live' ? fx(v, f0) : fx(v, isBeta ? f2 : isRet ? sg1 : (c.endsWith('capture') ? f0 : f1)) + (isPct && Number.isFinite(v) ? '%' : '');
           if (f[c + '_date']) td.title = 'on ' + fmtDate(parseDate(f[c + '_date']));
           if ((isRet || c === 'dd_now' || c === 'max_dd') && v < 0 && f.kind === 'SIF' && isRet) td.classList.add('bad');
         }
@@ -939,7 +941,8 @@
         const h = document.createElement('h4'); h.textContent = r.strategy + ' · ' + r.family + ' (' + r.amc + ')'; a.append(h);
         const facts = document.createElement('div'); facts.className = 'facts';
         const ter = Number.isFinite(r.ter) ? (r.ter > 5 ? f2(r.ter) + '% as filed (looks wrong)' : f2(r.ter) + '%' + (r.ter_source === 'Groww' ? ' (Groww)' : '')) : '–';
-        for (const [k, v] of [['Type', r.type ? r.type.toLowerCase() : 'n/a'], ['NFO opened', r.launch ? fmtDate(parseDate(r.launch)) : '–'], ['AUM 30 Sep', Number.isFinite(r.aum) ? fcr(r.aum) : 'not yet disclosed'],
+        const fr = (funds() || []).find((x) => x.id === r.code);
+        for (const [k, v] of [['Type', r.type ? r.type.toLowerCase() : 'n/a'], ['NFO opened', r.launch ? fmtDate(parseDate(r.launch)) : '–'], ['Live for', fr && Number.isFinite(fr.days_live) ? fr.days_live + ' days' : '–'], ['AUM 30 Sep', Number.isFinite(r.aum) ? fcr(r.aum) : 'not yet disclosed'],
           ['Benchmark', r.benchmark || 'not on AMFI'], ['Expense, direct', ter], ['Risk level (1-5)', Number.isFinite(r.risk) ? String(r.risk) : '–'], ['Exit load', r.exit_load || '–']]) {
           const s1 = document.createElement('span'); s1.append(document.createTextNode(k + ': ')); const b = document.createElement('b'); b.textContent = v; s1.append(b); facts.append(s1);
         }

@@ -171,12 +171,13 @@
 
   <section class="sif-panel" id="scoreboard">
     <header><h2>Scoreboard</h2><span class="sif-seg" id="sif-annual" role="group" aria-label="Return basis"><button type="button" data-annual="annual" class="on" aria-pressed="true">Returns % a year</button><button type="button" data-annual="period">% for the period</button></span></header>
-    <p class="note">Direct Plan Growth. Returns from 3M up are annualised by default (compounded over the actual days), so funds of different ages compare on one footing; 1M stays the plain month's return, since a month compounded to a year is noise. Read 3M with care. Click a column to sort.</p>
+    <p class="note">Direct Plan Growth. Returns from 3M up are annualised by default (compounded over the actual days), so funds of different ages compare on one footing; 1M stays the plain month's return, since a month compounded to a year is noise. Read 3M with care. Days live counts calendar days from the first NAV to the latest. Click a column to sort.</p>
     <div class="sif-tablewrap">
       <table id="score-table" data-source="funds" data-row-key="id">
         <thead><tr>
           <th data-field="brand"><button type="button" data-sort="brand">Fund</button></th>
           <th data-field="first_date"><button type="button" data-sort="first_date">Launched</button></th>
+          <th data-field="days_live"><button type="button" data-sort="days_live">Days live</button></th>
           <th><button type="button" data-sort="aum">AUM ₹ cr</button></th>
           <th data-field="ret_1m"><button type="button" data-sort="ret_1m">1M</button></th>
           <th data-field="ret_3m"><button type="button" data-sort="ret_3m">3M</button></th>
