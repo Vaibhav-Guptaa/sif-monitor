@@ -2,6 +2,12 @@
 <link rel="stylesheet" href="fonts.css">
 <style>
 /* Layout: one column of panels. Controls bar, scoreboard, time-series panel, scatter, construction, fund deep dive, AUM, sources. */
+/* Always light: white panels on a pale page, vivid series colours. */
+.sif { color-scheme: light; --color-bg: #f5f7fb; --color-panel: #ffffff; --color-fg: #111827; --color-fg-muted: #5b6474; --color-border-line: #e2e7ef;
+  --color-ok: #15803d; --color-warn: #b45309; --color-bad: #dc2626; --color-accent: #2563eb;
+  --cds-text-secondary: #5b6474; --cds-border: #e2e7ef; --cds-surface-popover: #ffffff; --cds-shadow-popover: 0 6px 24px rgba(16,24,40,.14);
+  --cds-chart-muted: #c3cad5; --cds-chart-reference: #94a3b8; --cds-chart-axis: #a3adbb; --cds-chart-grid: #eef1f6;
+  background: var(--color-bg); }
 .sif { --sif-text: 'Chakra Petch', var(--font-anthropic-sans), system-ui, sans-serif; --sif-num: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
   font-family: var(--sif-text); font-weight: 500; color: var(--color-fg); display: grid; gap: var(--cds-gap-xl); }
 .sif h1 { font-family: var(--sif-text); font-weight: 600; font-size: var(--cds-font-size-title); margin: 0; letter-spacing: .01em; text-wrap: balance; }
@@ -18,14 +24,60 @@
 .sif-seg { display: inline-flex; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); overflow: hidden; flex-wrap: wrap; }
 .sif-seg button { font: inherit; font-size: var(--cds-font-size-caption); background: transparent; color: var(--color-fg-muted); border: 0; padding: 6px 10px; cursor: pointer; }
 .sif-seg button + button { border-left: 1px solid var(--color-border-line); }
-.sif-seg button.on { background: var(--color-fg); color: var(--color-bg); }
+.sif-seg button.on { background: var(--color-accent); color: #ffffff; }
 .sif-seg button:focus-visible, .sif-chip:focus-visible, .sif th button:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 1px; }
 .sif-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sif [data-draw="ts"] { width: 100%; max-width: 860px; margin-inline: auto; }
+.sif-ts-wrap { display: grid; grid-template-columns: minmax(0, 620px) minmax(0, 1fr); gap: var(--cds-gap-xl); align-items: start; }
+@media (max-width: 860px) { .sif-ts-wrap { grid-template-columns: minmax(0, 1fr); } }
+.sif [data-draw="ts"] { width: 100%; max-width: 620px; }
+.sif-ts-main { position: relative; }
+.sif-ts-nav { margin-top: 4px; }
+.sif-ts-nav svg { cursor: crosshair; }
+.sif-brush .selection { fill: var(--color-accent); fill-opacity: .14; stroke: var(--color-accent); stroke-width: 1; }
+.sif-brush .handle { fill: var(--color-accent); fill-opacity: .55; }
+.sif-range { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sif-range input { font: inherit; font-family: var(--sif-num); font-size: 12px; color: var(--color-fg); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: 8px; padding: 4px 6px; }
+.sif-btn { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+.sif-btn:hover { border-color: var(--color-accent); }
+.sif-ts-side { display: grid; gap: var(--cds-gap-sm); align-content: start; }
+.sif-ts-side td:first-child { white-space: normal; min-width: 130px; }
+.sif-ts-side th, .sif-ts-side td { padding: 6px 5px; }
+.sif-ts-side h3 { font-family: var(--sif-text); font-weight: 600; font-size: 14px; margin: 0; }
 .sif-chip { font: inherit; font-size: var(--cds-font-size-caption); border: 1px solid var(--color-border-line); background: transparent; color: var(--color-fg-muted); border-radius: 999px; padding: 3px 10px 3px 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .sif-chip i { width: 14px; height: 3px; border-radius: 2px; background: var(--color-border-line); display: inline-block; }
 .sif-chip.on { color: var(--color-fg); border-color: var(--color-fg-muted); }
 .sif-chip.bench i { height: 0; border-top: 2px dashed var(--color-fg-muted); background: none; }
+.sif-key-h { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--color-fg-muted); margin: 6px 0 2px; }
+.sif-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 10px 18px; }
+.sif-key div { display: grid; grid-template-columns: 14px 1fr; column-gap: 8px; row-gap: 2px; align-items: start; font-size: var(--cds-font-size-caption); }
+.sif-key i { width: 14px; height: 14px; border-radius: 3px; grid-row: span 2; margin-top: 1px; }
+.sif-key b { font-weight: 600; color: var(--color-fg); }
+.sif-key span { color: var(--color-fg-muted); line-height: 1.45; }
+.sif-cat-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.sif-cat-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+.sif-cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--cds-gap-md); }
+.sif-cat { border: 1px solid var(--color-border-line); border-top: 4px solid var(--c); border-radius: var(--cds-radius); padding: 12px 14px; display: grid; gap: 6px; font-size: var(--cds-font-size-caption); line-height: 1.45; }
+.sif-cat h3 { margin: 0; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.sif-cat h3 span { font-family: var(--sif-num); font-weight: 500; color: var(--color-fg-muted); font-size: 12px; white-space: nowrap; }
+.sif-cat dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 3px 8px; }
+.sif-cat dt { color: var(--color-fg-muted); }
+.sif-cat dd { margin: 0; }
+.sif-fam { border-bottom: 1px solid var(--color-border-line); }
+.sif-fam summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(120px, 1.4fr) 80px 110px; gap: 8px; padding: 9px 4px; align-items: center; font-size: 13px; }
+.sif-fam summary::-webkit-details-marker { display: none; }
+.sif-fam summary::before { content: '+'; position: absolute; margin-left: -14px; color: var(--color-fg-muted); }
+.sif-fam[open] summary::before { content: '–'; }
+.sif-fam summary b { font-weight: 600; }
+.sif-fam summary .n { text-align: right; font-family: var(--sif-num); }
+.sif-fam .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.sif-fam .chips span { font-size: 11px; padding: 1px 7px; border-radius: 999px; color: #fff; }
+.sif-strat { padding: 4px 4px 14px 18px; display: grid; gap: 12px; }
+.sif-strat article { display: grid; gap: 4px; font-size: var(--cds-font-size-caption); border-left: 3px solid var(--c); padding-left: 10px; }
+.sif-strat article h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.sif-strat .facts { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--color-fg-muted); }
+.sif-strat .facts b { color: var(--color-fg); font-family: var(--sif-num); font-weight: 500; }
+.sif-strat p { color: var(--color-fg); max-width: 110ch; }
+@media (max-width: 640px) { .sif-fam summary { grid-template-columns: 1fr 70px 90px; } .sif-fam summary .chips { display: none; } }
 .sif-tablewrap { overflow-x: auto; min-width: 0; }
 .sif table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); }
 .sif th { text-align: right; font-weight: 600; color: var(--color-fg-muted); padding: 6px 8px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; vertical-align: bottom; }
@@ -67,20 +119,18 @@
   <header class="sif-head" id="top">
     <div class="sif-eyebrow">Specialised Investment Funds · daily official NAVs</div>
     <h1>SIF Competitor Monitor</h1>
-    <p><span data-draw="takeaway">—</span></p>
-    <p class="note">NAVs to <b class="num" data-draw="asof" data-source="funds" data-field="last_date">—</b> from AMFI. Holdings from each AMC's portfolio disclosure. Every number links to its source in Sources.</p>
   </header>
 
-  <section class="sif-panel" id="controls" aria-label="Controls">
-    <div class="sif-controls">
-      <label for="sif-cat">Category
-        <select class="dash-select" id="sif-cat" aria-label="Category">
+  <section class="sif-panel" id="timeseries">
+    <div class="sif-controls" id="controls" aria-label="Controls">
+      <label for="sif-cat">Family (SEBI type)
+        <select class="dash-select" id="sif-cat" aria-label="Family">
           <option value="Hybrid long-short" selected>Hybrid long-short</option>
           <option value="Equity long-short">Equity long-short</option>
           <option value="Ex-top 100 long-short">Ex-top 100 long-short</option>
           <option value="Active asset allocator">Active asset allocator</option>
           <option value="Sector rotation">Sector rotation</option>
-          <option value="all">All SIFs</option>
+          <option value="all">All families</option>
         </select>
       </label>
       <label>Window
@@ -88,15 +138,40 @@
           <button type="button" data-win="1m">1M</button><button type="button" data-win="3m">3M</button><button type="button" data-win="6m">6M</button><button type="button" data-win="1y">1Y</button><button type="button" data-win="all" class="on" aria-pressed="true">Since launch</button><button type="button" data-win="common">Common start</button>
         </span>
       </label>
+      <label>Custom period
+        <span class="sif-range"><input type="date" id="sif-from" aria-label="From"><span class="muted">to</span><input type="date" id="sif-to" aria-label="To"><button type="button" class="sif-btn" id="sif-reset">Reset</button></span>
+      </label>
     </div>
     <div>
-      <p class="note">Highlight up to six funds. Benchmarks are dashed.</p>
-      <div class="sif-chips" data-draw="chips" data-source="funds"></div>
+      <p class="note">The family you pick drives every section below. Every fund starts switched on; click a name to hide or show it, and the chart rescales to what is shown. Benchmarks are dashed.</p>
+      <div class="sif-chips" data-draw="chips" data-source="funds families"></div>
     </div>
+    <header>
+      <h2 data-draw="tstitle">Growth of ₹100</h2>
+      <span class="sif-seg" id="sif-metric" role="group" aria-label="Metric">
+        <button type="button" data-metric="idx" class="on" aria-pressed="true">Growth</button><button type="button" data-metric="dd">Drawdown</button><button type="button" data-metric="vol60">Vol 60d</button><button type="button" data-metric="vol20">Vol 20d</button><button type="button" data-metric="beta60">Beta 60d</button><button type="button" data-metric="beta20">Beta 20d</button><button type="button" data-metric="ret6m">6M return</button><button type="button" data-metric="ret12m">12M return</button><button type="button" data-metric="sharpe6m">6M Sharpe</button>
+      </span>
+    </header>
+    <div class="sif-ts-wrap">
+      <div class="sif-chart" id="ts-chart" data-draw="ts" data-source="daily funds families"></div>
+      <div class="sif-ts-side">
+        <h3>Over the period shown</h3>
+        <p class="note" id="ts-period">—</p>
+        <div class="sif-tablewrap">
+          <table id="ts-stats-table">
+            <thead><tr><th>Line</th><th title="Return, % a year">Ret % yr</th><th title="Return for the period, %">Ret % period</th><th title="Volatility, % a year">Vol %</th><th title="Sharpe ratio, risk-free 5%">Sharpe</th><th title="Worst drawdown in the period, %">Max DD %</th><th>Beta</th></tr></thead>
+            <tbody id="ts-stats"></tbody>
+          </table>
+        </div>
+        <p class="note">Ret % yr compounds the period return over its actual days; Ret % period is the plain return. Sharpe = (Ret % yr − 5%) ÷ Vol. Volatility, Sharpe (risk-free 5%) and beta from daily returns inside the period; beta is against Nifty 50. * = launched after the period start, measured from launch.</p>
+      </div>
+    </div>
+    <p class="note">Pick a period with the window buttons, the date boxes, or by dragging across the strip under the chart (drag the shaded box to move it, click outside it to reset). It applies to every metric. Growth rebases each line to 100 at the period start (or at launch if later); drawdown is measured from the peak inside the period. Trailing 6- and 12-month returns are the plain return over the past 182 or 365 days at each date, so a fund appears once it is that old; the 6-month Sharpe annualises that return, subtracts 5% and divides by the 6-month volatility. Rolling volatility is annualised; rolling 60-day beta needs 40 of the last 60 sessions, 20-day beta 15 of the last 20. The 20-day beta reacts fast but is noisy: one big Nifty day moves it a lot. The category and window also set the scoreboard and scatter.</p>
   </section>
 
   <section class="sif-panel" id="scoreboard">
-    <header><h2>Scoreboard</h2><span class="note">Direct Plan Growth. Returns in %, not annualised except CAGR and alpha. Click a column to sort.</span></header>
+    <header><h2>Scoreboard</h2><span class="sif-seg" id="sif-annual" role="group" aria-label="Return basis"><button type="button" data-annual="annual" class="on" aria-pressed="true">Returns % a year</button><button type="button" data-annual="period">% for the period</button></span></header>
+    <p class="note">Direct Plan Growth. Returns from 3M up are annualised by default (compounded over the actual days), so funds of different ages compare on one footing; 1M stays the plain month's return, since a month compounded to a year is noise. Read 3M with care. Click a column to sort.</p>
     <div class="sif-tablewrap">
       <table id="score-table" data-source="funds" data-row-key="id">
         <thead><tr>
@@ -108,34 +183,58 @@
           <th data-field="ret_6m"><button type="button" data-sort="ret_6m">6M</button></th>
           <th data-field="ret_1y"><button type="button" data-sort="ret_1y">1Y</button></th>
           <th data-field="ret_inception"><button type="button" data-sort="ret_inception">Since launch</button></th>
-          <th data-field="cagr"><button type="button" data-sort="cagr">CAGR</button></th>
           <th data-field="vol_life"><button type="button" data-sort="vol_life">Vol life</button></th>
           <th data-field="vol_1y"><button type="button" data-sort="vol_1y">Vol 1Y</button></th>
           <th data-field="vol_60d"><button type="button" data-sort="vol_60d">Vol 60d</button></th>
+          <th data-field="vol60_max_12m"><button type="button" data-sort="vol60_max_12m">Vol 60d high, 12M</button></th>
+          <th data-field="vol60_min_12m"><button type="button" data-sort="vol60_min_12m">Vol 60d low, 12M</button></th>
           <th data-field="beta_life"><button type="button" data-sort="beta_life">Beta</button></th>
           <th data-field="beta_dimson"><button type="button" data-sort="beta_dimson">Beta lag-adj</button></th>
           <th data-field="beta_60d"><button type="button" data-sort="beta_60d">Beta 60d</button></th>
+          <th data-field="beta_20d"><button type="button" data-sort="beta_20d">Beta 20d</button></th>
+          <th data-field="beta60_max_12m"><button type="button" data-sort="beta60_max_12m">|Beta 60d| high, 12M</button></th>
+          <th data-field="beta60_min_12m"><button type="button" data-sort="beta60_min_12m">|Beta 60d| low, 12M</button></th>
           <th data-field="alpha"><button type="button" data-sort="alpha">Alpha</button></th>
+          <th data-field="sharpe_life"><button type="button" data-sort="sharpe_life">Sharpe since launch</button></th>
+          <th data-field="sharpe_6m"><button type="button" data-sort="sharpe_6m">Sharpe 6M</button></th>
+          <th data-field="sharpe_1y"><button type="button" data-sort="sharpe_1y">Sharpe 1Y</button></th>
           <th data-field="max_dd"><button type="button" data-sort="max_dd">Max DD</button></th>
           <th data-field="dd_now"><button type="button" data-sort="dd_now">DD now</button></th>
           <th data-field="up_capture"><button type="button" data-sort="up_capture">Up cap</button></th>
           <th data-field="down_capture"><button type="button" data-sort="down_capture">Down cap</button></th>
         </tr></thead>
-        <tbody data-draw="score"></tbody>
+        <tbody data-draw="score" data-source="funds families"></tbody>
       </table>
     </div>
-    <p class="note">Vol: annualised standard deviation of daily returns. Beta: slope against Nifty 50 daily returns. Lag-adjusted beta adds the previous day's Nifty move, which catches stale prices. Alpha: CAGR minus beta × Nifty CAGR minus (1 − beta) × 7.5% debt, shown once a fund has six months of NAVs. Capture: the fund's summed return on Nifty up (or down) days as a share of Nifty's. AUM: month-end net assets of the latest disclosed portfolio, <span class="pill official">official</span> from the AMC file or <span class="pill disclosed">disclosed</span> via Groww's copy of it.</p>
+    <p class="note">Vol: annualised standard deviation of daily returns. Beta: slope against Nifty 50 daily returns. Lag-adjusted beta adds the previous day's Nifty move, which catches stale prices. Alpha: CAGR minus beta × Nifty CAGR minus (1 − beta) × 7.5% debt, shown once a fund has six months of NAVs. Sharpe: (annualised return − 5% risk-free) ÷ annualised volatility of daily returns over the same window; since launch shown from three months of NAVs; not shown for debt at 6.5% and the liquid fund, whose near-zero volatility makes it meaningless. 12M high and low: the highest and lowest value of the rolling 60-day volatility and of the absolute rolling 60-day beta over the last 12 months, or since the first full 60-day window for younger funds; hover a cell for the date. Capture: the fund's summed return on Nifty up (or down) days as a share of Nifty's. AUM: month-end net assets of the latest disclosed portfolio, <span class="pill official">official</span> from the AMC file or <span class="pill disclosed">disclosed</span> via Groww's copy of it.</p>
   </section>
 
-  <section class="sif-panel" id="timeseries">
-    <header>
-      <h2 data-draw="tstitle">Growth of ₹100</h2>
-      <span class="sif-seg" id="sif-metric" role="group" aria-label="Metric">
-        <button type="button" data-metric="idx" class="on" aria-pressed="true">Growth</button><button type="button" data-metric="dd">Drawdown</button><button type="button" data-metric="vol60">Vol 60d</button><button type="button" data-metric="vol20">Vol 20d</button><button type="button" data-metric="beta60">Beta 60d</button>
-      </span>
-    </header>
-    <div class="sif-chart" id="ts-chart" data-draw="ts" data-source="daily funds"></div>
-    <p class="note">Growth rebases each line to 100 at the window start (or at launch if later). Rolling volatility is annualised; rolling beta needs 40 of the last 60 sessions.</p>
+  <section class="sif-panel" id="construction">
+    <header><h2 data-draw="constitle">How each fund's money is invested</h2><span class="note">Latest portfolio disclosure, % of NAV. Each bar adds up to 100.</span></header>
+    <div data-draw="conskey"></div>
+    <p class="note">Each fund's equity is split stock by stock: a share held against a short future on the same stock is arbitrage; a share with a call written on it is a covered call, and so on, so every rupee lands in exactly one bucket. Option legs are assumed to cover the whole stock position (disclosures give premiums, not quantities). <b>Beyond the 100</b> (right of each bar): futures need only margin, so they add exposure without using NAV; long futures act like owning the share, short futures on stocks not held are naked shorts, index futures add or remove Nifty exposure. Options sold on stocks the fund does not hold, and Nifty puts bought, are counted there by number of positions. <b>Black line</b>: share of NAV that moves with share prices before options. <b>White diamond</b>: exposure the daily NAV showed over 60 days (beta × 100). The first row is the family total, weighted by AUM.</p>
+    <div class="sif-chart sm" id="cons-chart" data-draw="cons" data-source="alloc families"></div>
+    <div class="sif-tablewrap">
+      <table id="cons-table" data-source="construction" data-row-key="fund">
+        <thead><tr>
+          <th data-field="brand">Fund</th>
+          <th data-field="asof">As of</th>
+          <th class="l" data-field="source">Source</th>
+          <th data-field="net_equity">Equity exposure before options</th>
+          <th data-field="implied">Exposure the NAV shows</th>
+          <th data-field="stock_fut_short">Short stock futures, all</th>
+          <th data-field="index_fut">Index futures</th>
+          <th data-field="options">Option lines written / bought</th>
+          <th data-field="n_stocks">Stocks</th>
+          <th data-field="top10_share">Top 10, % of stock book</th>
+          <th data-field="eff_n">Effective number of stocks</th>
+          <th data-field="long_lms">Long L / M / S</th>
+          <th data-field="net_lms">Net L / M / S</th>
+        </tr></thead>
+        <tbody data-draw="constable"></tbody>
+      </table>
+    </div>
+    <p class="note">Equity exposure before options = stocks + stock futures + index futures (shorts negative). Options appear in disclosures at premium value, not delta, so the option book's real exposure is not in that figure. The exposure the NAV shows (60-day beta × 100) is what the daily NAV says the fund actually carried. A wide gap between the two points to option hedges or timing. Effective number of stocks = 1 / sum of squared weights in the stock book: ten equal holdings give 10. L / M / S use AMFI's Jan–Jun 2026 market-cap list: top 100 large, 101–250 mid, rest small. Shorts count in the band of the stock shorted.</p>
   </section>
 
   <div class="sif-grid2">
@@ -145,51 +244,16 @@
       <p class="note">Volatility over the last 12 months, or since launch if shorter. Return over the selected window. Up and to the left is better.</p>
     </section>
     <section class="sif-panel" id="aum">
-      <header><h2>Assets under management</h2><span class="note">₹ crore</span></header>
-      <div class="sif-chart sm" id="aum-chart" data-draw="aum" data-source="aum"></div>
+      <header><h2 data-draw="aumtitle">Assets under management</h2><span class="note">₹ crore, 30 Sep 2026</span></header>
+      <div class="sif-chart sm" id="aum-chart" data-draw="aum" data-source="families"></div>
       <p class="note" data-draw="aumnote">—</p>
     </section>
   </div>
 
-  <section class="sif-panel" id="construction">
-    <header><h2>Portfolio construction</h2><span class="note">Latest disclosure, % of NAV</span></header>
-    <div class="sif-legend">
-      <span><i style="background: var(--sif-c-hedged)"></i>Stocks hedged with same-stock futures</span>
-      <span><i style="background: var(--sif-c-open)"></i>Stocks unhedged</span>
-      <span><i style="background: var(--sif-c-reit)"></i>REITs, InvITs, fund units</span>
-      <span><i style="background: var(--sif-c-debt)"></i>Bonds and G-secs</span>
-      <span><i style="background: var(--sif-c-mm)"></i>Money market</span>
-      <span><i style="background: var(--sif-c-cash)"></i>Cash, TREPS, margin</span>
-      <span><i style="background: var(--sif-c-resid)"></i>Debt and cash, unsplit (older snapshots only)</span>
-    </div>
-    <div class="sif-chart sm" id="cons-chart" data-draw="cons" data-source="alloc"></div>
-    <div class="sif-tablewrap">
-      <table id="cons-table" data-source="construction" data-row-key="fund">
-        <thead><tr>
-          <th data-field="brand">Fund</th>
-          <th data-field="asof">As of</th>
-          <th class="l" data-field="source">Source</th>
-          <th data-field="net_equity">Net equity before options</th>
-          <th data-field="implied">Exposure implied by NAV</th>
-          <th data-field="stock_fut_short">Stock futures short</th>
-          <th data-field="index_fut">Index futures</th>
-          <th data-field="options">Option lines written / bought</th>
-          <th data-field="n_stocks">Stocks</th>
-          <th data-field="top10_share">Top 10, % of stock book</th>
-          <th data-field="eff_n">Effective N</th>
-          <th data-field="long_lms">Long L / M / S</th>
-          <th data-field="net_lms">Net L / M / S</th>
-        </tr></thead>
-        <tbody data-draw="constable"></tbody>
-      </table>
-    </div>
-    <p class="note">Net equity = stocks + stock futures + index futures, before options. Options appear in disclosures at premium value, not delta, so the option book's real exposure is not in that figure. The NAV-implied exposure (60-day beta × 100) is what the daily NAV says the fund actually carried. A wide gap between the two points to option hedges or timing. Effective N = 1 / sum of squared weights in the stock book. L / M / S use AMFI's Jan–Jun 2026 market-cap list: top 100 large, 101–250 mid, rest small. Shorts count in the band of the stock shorted.</p>
-  </section>
-
   <section class="sif-panel" id="deepdive">
     <header>
       <h2>Fund deep dive</h2>
-      <label class="sif-controls" for="sif-fund"><select class="dash-select" id="sif-fund" aria-label="Fund" data-draw="fundsel" data-source="alloc"></select></label>
+      <label class="sif-controls" for="sif-fund"><select class="dash-select" id="sif-fund" aria-label="Fund" data-draw="fundsel" data-source="alloc families"></select></label>
     </header>
     <div class="sif-tiles" data-draw="ddtiles" data-source="alloc funds"></div>
     <h2>How the mix has changed</h2>
@@ -224,6 +288,18 @@
     <p class="note" data-draw="holdnote">—</p>
   </section>
 
+  <section class="sif-panel" id="families">
+    <header><h2>SIF families: the SEBI types and every fund in them</h2><span class="note" data-draw="famasof" data-source="families">—</span></header>
+    <div class="sif-tiles" data-draw="famtiles" data-source="families"></div>
+    <div class="sif-cat-legend" data-draw="famlegend" data-source="families"></div>
+    <div class="sif-chart sm" id="fam-chart" data-draw="famchart" data-source="families"></div>
+    <h2>Each family's rules</h2>
+    <div class="sif-cats" data-draw="famcats" data-source="families"></div>
+    <p class="note"><b>Rules for every SIF fund, whatever its family:</b> minimum ₹10 lakh per investor (PAN) across one SIF house's funds, except accredited investors. One fund per family per SIF house. Gross exposure, including derivatives, at most 100% of NAV; a stock held against a future or option on the same stock, same expiry, counts once. At most 10% of NAV in one company's shares, and 15% of a company's paid-up capital across the whole fund house. Option premium paid plus received at most 20% of NAV. Naked short futures, naked written calls and naked written puts all count toward the 25% short cap; covered calls count as hedged. No minimum short is required. Notice period for redemption at most 15 working days; interval strategies must be listed on an exchange. One broad-market benchmark per strategy. Sources: SEBI Master Circular for Mutual Funds (as on 20 Mar 2026), chapter 21; SEBI FAQ on SIFs, B25, B33, B36, B42.</p>
+    <h2>Every fund, by family</h2>
+    <div data-draw="famlist" data-source="families"></div>
+  </section>
+
   <section class="sif-panel" id="sources">
     <header><h2>Sources and freshness</h2></header>
     <div class="sif-tablewrap">
@@ -237,9 +313,9 @@
     <details>
       <summary>How the data is collected</summary>
       <ul>
-        <li>Daily NAVs: AMFI's SIF NAV history service (the one behind amfiindia.com/sif/latest-nav/nav-history), one call per strategy since launch, Direct Plan Growth. AMFI receives NAVs from every SIF by 11 pm IST each business day. The strategy list comes from AMFI's SIF_NAVAll.txt. Every series is also pulled from Groww (same AMFI code) and compared date by date: 4,884 of 4,893 shared dates are identical. AMFI is kept as the record because it has more dates (Groww lacks Altiva's first 3 days, RedHex's first 16 and 8 May 2026) and its values are the ones consistent with the market on the 9 dates that differ. Groww fills a date only if AMFI has not published it yet.</li>
+        <li>Daily NAVs: AMFI's SIF NAV history service (the one behind amfiindia.com/sif/latest-nav/nav-history), one call per fund since launch, Direct Plan Growth. AMFI receives NAVs from every SIF by 11 pm IST each business day. The strategy list comes from AMFI's SIF_NAVAll.txt. Every series is also pulled from Groww (same AMFI code) and compared date by date: 4,884 of 4,893 shared dates are identical. AMFI is kept as the record because it has more dates (Groww lacks Altiva's first 3 days, RedHex's first 16 and 8 May 2026) and its values are the ones consistent with the market on the 9 dates that differ. Groww fills a date only if AMFI has not published it yet.</li>
         <li>Benchmarks: Nifty 50 price index (Yahoo Finance ^NSEI, used for beta). Nifty 50 total return proxied by UTI Nifty 50 Index Fund Direct (AMFI 120716). Arbitrage: Kotak Arbitrage Fund Direct (AMFI 119771). Liquid: HDFC Liquid Fund Direct (AMFI 119091). The 50:50 blend is Nifty 50 plus 7.5% debt, rebalanced monthly. Debt at 6.5% is a fixed 6.5% a year, accrued daily: the plain debt hurdle.</li>
-        <li>Holdings: SEBI requires each SIF to disclose every strategy's full portfolio, derivatives included, as at the end of every alternate month (May, July, September, November, January, March), on its own site and AMFI's within 10 calendar days (SEBI SIF FAQ, A26). Some AMCs publish monthly. The next mandatory disclosure is 30 November, due by 10 December.</li>
+        <li>Holdings: SEBI requires each SIF to disclose every fund's full portfolio, derivatives included, as at the end of every alternate month (May, July, September, November, January, March), on its own site and AMFI's within 10 calendar days (SEBI SIF FAQ, A26). Some AMCs publish monthly. The next mandatory disclosure is 30 November, due by 10 December.</li>
         <li>Each run saves Groww's copy of every hybrid fund's latest disclosed portfolio (every line: stocks, futures, options, debt, REITs, cash, with value and % of NAV, plus net assets), so the history builds up automatically. Checked against Arudha's own 30 Sep file: AUM identical, every asset class within 0.04 points, cap bands within 0.01 points. AMC files add ISINs, quantities (hence trades) and debt ratings, and win when both exist.</li>
         <li>AUM: month-end net assets of each disclosed portfolio (AMC file or Groww's copy). The 11 funds' 30 Sep figures sum to ₹23,826 cr, 99.5% of AMFI's ₹23,957 cr hybrid long-short total. Industry totals are AMFI's monthly SIF data as reported in the press.</li>
         <li>Market-cap bands: AMFI's average market capitalisation list for January–June 2026, matched by ISIN, or by name for Groww rows, with former names mapped to current ones (Zomato to Eternal, Adani Transmission to Adani Energy Solutions and so on). Stocks listed after June are unclassified until AMFI's December list.</li>

@@ -50,6 +50,21 @@ FUNDS = {
     "titanium": ("SIF-32", "Titanium", "https://www.tatamutualfund.com/titanium-sif/statutory-disclosures"),
 }
 
+HYBRID = "Hybrid long-short"
+
+
+def all_funds() -> dict:
+    """Hybrid funds (named keys, AMC pages) plus every other SIF strategy, keyed by its AMFI code (e.g. 'sif-120')."""
+    out = {k: (*v, HYBRID) for k, v in FUNDS.items()}
+    sp = ROOT / "data" / "monitor" / "raw" / "strategies.csv"
+    if sp.exists():
+        import csv
+        for r in csv.DictReader(sp.open()):
+            if r["category"] != HYBRID and r["code"] not in {v[0] for v in FUNDS.values()}:
+                out[r["code"].lower()] = (r["code"], r["brand"], "", r["category"])
+    return out
+
+
 STOP = {"ltd", "limited", "the", "co", "company", "corporation", "corp", "of", "india", "and", "inc", "plc", "pvt"}
 # Former names (as Groww still lists some holdings) -> current names on AMFI's list. Keys and values are norm() forms.
 ALIAS = {
@@ -72,7 +87,8 @@ GROWW_RENAME = {"tata motors": "Tata Motors Passenger Vehicles Ltd"}
 
 
 def norm(name: str) -> str:
-    n = name.lower().replace("&", " and ").replace("'", "")
+    n = name.lower().replace("&", " and ").replace("'", "").replace("\u2019", "")
+    n = re.sub(r"\s+eq\s*$", "", n.strip())                        # 'LTD. EQ' suffix in some AMC files
     n = re.sub(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", " ", n)          # expiry dates
     n = re.sub(r"\b\d{1,2}[- ]?[a-z]{3}[- ]?\d{2,4}\b", " ", n)    # 27-Oct-2026
     n = re.sub(r"[^a-z0-9 ]", " ", n)
@@ -100,6 +116,17 @@ def load_caps():
     return by_isin, by_name
 
 
+def _llm_aliases() -> None:
+    """Matches settled by llm_assist.py (holding name -> AMFI list name), each checked against a candidate list."""
+    import json
+    f = ROOT / "data" / "monitor" / "ref" / "llm_aliases.json"
+    if f.exists():
+        for holding, d in json.loads(f.read_text()).items():
+            if d.get("amfi"):
+                ALIAS.setdefault(norm(holding), d["amfi"])
+
+
+_llm_aliases()
 CAP_ISIN, CAP_NAME = load_caps()
 
 
@@ -385,12 +412,21 @@ def summarise(p: dict) -> tuple[dict, list[dict]]:
     for l in L:
         if l["kind"] == "FUT":
             fut_by[ukey(l["under"])] += l["pct"]
-    hedged = unhedged = 0.0
+    # stocks with a call written on them (covered calls) and with a put written (extra long exposure)
+    call_written = {ukey(l["under"]) for l in L if l["kind"] == "OPT" and l["pct"] < 0 and l.get("opt") == "C"}
+    put_written = {ukey(l["under"]) for l in L if l["kind"] == "OPT" and l["pct"] < 0 and l.get("opt") == "P"}
+    opt_untyped = {ukey(l["under"]) for l in L if l["kind"] == "OPT" and l["pct"] < 0 and not l.get("opt")}
+    hedged = unhedged = unhedged_cc = unhedged_ow = 0.0
     for l in eq:
-        f = fut_by.get(ukey(l["name"]), 0.0)
-        h = min(l["pct"], -f) if f < 0 else 0.0
-        hedged += max(h, 0)
-        unhedged += l["pct"] - max(h, 0)
+        k = ukey(l["name"])
+        f = fut_by.get(k, 0.0)
+        h = max(min(l["pct"], -f) if f < 0 else 0.0, 0)
+        hedged += h
+        unhedged += l["pct"] - h
+        if k in call_written:
+            unhedged_cc += l["pct"] - h
+        elif k in opt_untyped:          # source does not say call or put (Groww's generic "Options" lines)
+            unhedged_ow += l["pct"] - h
     naked_short = sum(v for k, v in fut_by.items() if v < 0 and k not in eq_by_under)
     long_fut = sum(v for v in fut_by.values() if v > 0)
     longs = sorted((l["pct"] for l in eq), reverse=True)
@@ -418,6 +454,60 @@ def summarise(p: dict) -> tuple[dict, list[dict]]:
                 else "AA" if "AA" in r else "Below AA / unrated" if r else "Unrated"
             debt_rating[b] += l["pct"]
     stocks_etc = agg["EQ"] + agg["REIT"] + agg["MF"] + agg["OPT"] + agg["IDXOPT"]
+    # ---- trading strategies, stock by stock: every rupee of a held stock lands in exactly one bucket ----
+    pos = defaultdict(lambda: defaultdict(float))   # key -> {fs: short fut, fl: long fut, cw, pw, cb, pb, uw, ub}
+    for l in L:
+        if l["kind"] == "FUT":
+            pos[ukey(l["under"])]["fs" if l["pct"] < 0 else "fl"] += l["pct"]
+        elif l["kind"] == "OPT":
+            t = l.get("opt") or "u"
+            side = "w" if l["pct"] < 0 else "b"
+            pos[ukey(l["under"])][(t.lower() if t != "u" else "u") + side] += l["pct"]
+    eqw = defaultdict(float)
+    for l in eq:
+        eqw[ukey(l["name"])] += l["pct"]
+    st = defaultdict(float)
+    for k, wk in eqw.items():
+        q = pos.get(k, {})
+        arb = max(min(wk, -q.get("fs", 0.0)), 0.0)
+        st["arb"] += arb
+        r = wk - arb
+        cw, pw, cb, pb, uw = q.get("cw", 0) < 0, q.get("pw", 0) < 0, q.get("cb", 0) > 0, q.get("pb", 0) > 0, q.get("uw", 0) < 0
+        if cw and pw:
+            st["cc_put"] += r          # stock + call written + put written (covered strangle)
+        elif cw and pb:
+            st["collar"] += r          # stock + call written + put bought
+        elif cw:
+            st["cc"] += r              # covered call
+        elif pb:
+            st["prot_put"] += r        # stock + put bought
+        elif pw:
+            st["put_on_held"] += r     # stock + put written: adds downside
+        elif uw:
+            st["opt_untyped"] += r     # options written, type not disclosed
+        else:
+            st["plain"] += r
+        if q.get("fs", 0.0) < -wk:     # more futures sold than stock held: the excess is a naked short
+            st["ov_short_fut"] += q.get("fs", 0.0) + wk
+    for k, q in pos.items():
+        if k in eqw:
+            st["ov_long_fut"] += q.get("fl", 0.0)
+            continue
+        st["ov_long_fut"] += q.get("fl", 0.0)
+        st["ov_short_fut"] += q.get("fs", 0.0)
+        if q.get("cw", 0) < 0 and q.get("pw", 0) < 0:
+            st["n_short_strangle"] += 1; st["prem_short_strangle"] += q["cw"] + q["pw"]
+        elif q.get("pw", 0) < 0:
+            st["n_naked_put"] += 1; st["prem_naked_put"] += q["pw"]
+        elif q.get("cw", 0) < 0:
+            st["n_naked_call"] += 1; st["prem_naked_call"] += q["cw"]
+        if q.get("uw", 0) < 0:
+            st["n_untyped_unheld"] += 1; st["prem_untyped_unheld"] += q["uw"]
+    for l in L:
+        if l["kind"] == "IDXOPT":
+            t, side = (l.get("opt") or "u"), ("bought" if l["pct"] > 0 else "written")
+            st[f"n_idx_{t.lower()}_{side}"] += 1
+            st[f"prem_idx_{t.lower()}_{side}"] += l["pct"]
     s = dict(
         fund=p["fund"], asof=p["asof"], source=p["source"], file=p["file"],
         aum_cr=round(p["net_assets_cr"], 2) if p["net_assets_cr"] else None,
@@ -435,6 +525,19 @@ def summarise(p: dict) -> tuple[dict, list[dict]]:
         mf_units=agg["MF"], irs=agg["IRS"],
         debt_cash_residual=(100 - stocks_etc) if p["source"] == "groww_page" else None,
         hedged_same_stock=hedged, unhedged_long=unhedged, naked_stock_short=naked_short,
+        # trading-strategy decomposition (% of NAV; the s_ and f_ fields add to 100)
+        s_arb=st["arb"], s_cc=st["cc"], s_cc_put=st["cc_put"], s_collar=st["collar"], s_prot_put=st["prot_put"],
+        s_put_on_held=st["put_on_held"], s_opt_untyped=st["opt_untyped"], s_plain=st["plain"],
+        s_opt_premium=agg["OPT"] + agg["IDXOPT"],
+        f_gsec=agg["GSEC"], f_corp=agg["DEBT"], f_mm=agg["MM"], f_reit=agg["REIT"], f_units=agg["MF"],
+        f_cash=((100 - stocks_etc - agg["DEBT"] - agg["GSEC"] - agg["MM"] - agg["IRS"]) if p["source"] == "groww" else agg["CASH"]) + agg["IRS"],
+        ov_long_fut=st["ov_long_fut"], ov_short_fut=st["ov_short_fut"], ov_idx_fut=agg["IDXFUT"],
+        **{k: st[k] for k in ("n_naked_put", "prem_naked_put", "n_naked_call", "prem_naked_call", "n_short_strangle",
+                               "prem_short_strangle", "n_untyped_unheld", "prem_untyped_unheld")},
+        **{k: v for k, v in st.items() if k.startswith(("n_idx_", "prem_idx_"))},
+        unhedged_covered_call=unhedged_cc, unhedged_opt_untyped=unhedged_ow, unhedged_plain=unhedged - unhedged_cc - unhedged_ow,
+        n_put_written_stocks=len(put_written),
+        opt_written_premium=sum(l["pct"] for l in opt if l["pct"] < 0), opt_bought_premium=sum(l["pct"] for l in opt if l["pct"] > 0),
         hedged_share=hedged / eq_tot * 100 if eq else 0,
         net_equity=agg["EQ"] + agg["FUT"] + agg["IDXFUT"],
         gross_equity=agg["EQ"] + sum(abs(l["pct"]) for l in L if l["kind"] in ("FUT", "IDXFUT")),
@@ -485,7 +588,7 @@ def trades(prev: dict, cur: dict) -> list[dict]:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     summaries, all_lines, changes, srcs = [], [], [], []
-    for fund, (code, brand, page) in FUNDS.items():
+    for fund, (code, brand, page, category) in all_funds().items():
         files = sorted((PORT / fund).glob(f"{fund}_hybrid_*.xlsx")) if (PORT / fund).exists() else []
         ports = []
         for f in files:
@@ -505,7 +608,7 @@ def main() -> None:
         ports.sort(key=lambda p: p["asof"] or "")
         for p in ports:
             s, L = summarise(p)
-            s["brand"], s["code"] = brand, code
+            s["brand"], s["code"], s["category"] = brand, code, category
             summaries.append(s)
         latest = ports[-1] if ports else None
         if latest:

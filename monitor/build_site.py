@@ -18,23 +18,13 @@ SITE = HERE / "site"
 D3 = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"
 
 TOKENS = """
-:root { color-scheme: light dark;
-  --color-bg: #f6f7f9; --color-panel: #ffffff; --color-fg: #16191f; --color-fg-muted: #5d6573; --color-border-line: #dde1e7;
+:root { color-scheme: light;
+  --color-bg: #f5f7fb; --color-panel: #ffffff; --color-fg: #111827; --color-fg-muted: #5d6573; --color-border-line: #dde1e7;
   --color-ok: #1d8a5a; --color-warn: #b7791f; --color-bad: #c43d4b; --color-accent: #2f6fd6;
   --cds-text-secondary: #5d6573; --cds-border: #dde1e7; --cds-surface-popover: #ffffff; --cds-shadow-popover: 0 6px 24px rgba(16,24,40,.14);
   --cds-chart-muted: #b9c0cb; --cds-chart-reference: #8d95a3; --cds-chart-axis: #8d95a3; --cds-chart-grid: #eceff3;
   --cds-radius: 10px; --cds-gap-sm: 8px; --cds-gap-md: 12px; --cds-gap-lg: 16px; --cds-gap-xl: 20px; --cds-pad-md: 12px; --cds-pad-lg: 18px;
   --cds-font-size-caption: 12px; --cds-font-size-heading: 17px; --cds-font-size-title: 26px; --font-anthropic-sans: system-ui; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --color-bg: #0f1216; --color-panel: #171b21; --color-fg: #e7eaef; --color-fg-muted: #9aa3b2; --color-border-line: #2a3039;
-  --color-ok: #3fbf86; --color-warn: #e0a54a; --color-bad: #ef6b78; --color-accent: #6a9cf0;
-  --cds-text-secondary: #9aa3b2; --cds-border: #2a3039; --cds-surface-popover: #1e232b; --cds-shadow-popover: 0 6px 24px rgba(0,0,0,.5);
-  --cds-chart-muted: #4a525e; --cds-chart-reference: #7c8594; --cds-chart-axis: #7c8594; --cds-chart-grid: #232932; } }
-:root[data-theme="dark"] {
-  --color-bg: #0f1216; --color-panel: #171b21; --color-fg: #e7eaef; --color-fg-muted: #9aa3b2; --color-border-line: #2a3039;
-  --color-ok: #3fbf86; --color-warn: #e0a54a; --color-bad: #ef6b78; --color-accent: #6a9cf0;
-  --cds-text-secondary: #9aa3b2; --cds-border: #2a3039; --cds-surface-popover: #1e232b; --cds-shadow-popover: 0 6px 24px rgba(0,0,0,.5);
-  --cds-chart-muted: #4a525e; --cds-chart-reference: #7c8594; --cds-chart-axis: #7c8594; --cds-chart-grid: #232932; }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--color-bg); color: var(--color-fg); }
@@ -58,7 +48,7 @@ def main() -> None:
                       '<details>\n      <summary>How the data is collected</summary>', 1)
     built = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     html = f"""<!doctype html>
-<html lang="en-IN">
+<html lang="en-IN" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -28,6 +28,7 @@ RAW = ROOT / "data" / "monitor" / "raw"
 OUT = ROOT / "data" / "monitor" / "out"
 DEBT = 0.075
 AN = 252
+RF = 0.05  # risk-free rate for Sharpe ratios, % a year
 
 
 def load():
@@ -76,12 +77,19 @@ def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series) -> dict:
     d0, d1 = s.index[0], s.index[-1]
     yrs = (d1 - d0).days / 365.25
 
-    def ret_since(days):
+    def ret_since(days, ann=False):
         cut = d1 - pd.Timedelta(days=days)
         if d0 > cut + pd.Timedelta(days=3):
             return np.nan
         base = s[s.index <= cut]
-        return (last / (base.iloc[-1] if len(base) else first) - 1) * 100
+        b0 = base.iloc[-1] if len(base) else first
+        dd_ = max((d1 - (base.index[-1] if len(base) else d0)).days, 1)
+        g = last / b0
+        return ((g ** (365 / dd_) - 1) if ann else (g - 1)) * 100
+
+    def sharpe(ann_ret, x):
+        v_ = vol(x)
+        return (ann_ret / 100 - RF) / (v_ / 100) if (np.isfinite(ann_ret) and v_ and np.isfinite(v_)) else np.nan
 
     def vol(x):
         return float(x.std(ddof=1) * np.sqrt(AN) * 100) if len(x) >= 15 else np.nan
@@ -112,7 +120,7 @@ def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series) -> dict:
         ret_1y=ret_since(365), ret_inception=(last / first - 1) * 100,
         cagr=cagr if yrs >= 0.5 else np.nan,
         vol_life=v, vol_1y=vol(r.iloc[-AN:]), vol_60d=vol(r.iloc[-60:]), vol_20d=vol(r.iloc[-20:]),
-        beta_life=beta, beta_dimson=beta_dimson, beta_60d=ols_beta(r60.values, rn60.values),
+        beta_life=beta, beta_dimson=beta_dimson, beta_60d=ols_beta(r60.values, rn60.values), beta_20d=ols_beta(r.iloc[-20:].values, rn.iloc[-20:].values),
         corr=float(np.corrcoef(r, rn)[0, 1]) if len(r) > 15 else np.nan,
         alpha=alpha if yrs >= 0.5 else np.nan,
         up_capture=up_cap, down_capture=dn_cap,
@@ -120,6 +128,13 @@ def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series) -> dict:
         worst_day=float(r.min() * 100) if len(r) else np.nan, best_day=float(r.max() * 100) if len(r) else np.nan,
         pos_days=float((r > 0).mean() * 100) if len(r) else np.nan,
         sharpe=((cagr / 100 - lq_ret) / (v / 100)) if (yrs >= 0.5 and v) else np.nan,
+        # annualised versions of every window (compound, actual days), so funds of any age compare on one footing
+        ret_1m_ann=ret_since(30, True), ret_3m_ann=ret_since(91, True), ret_6m_ann=ret_since(182, True),
+        ret_1y_ann=ret_since(365, True), ret_inception_ann=(((last / first) ** (365 / max((d1 - d0).days, 1)) - 1) * 100) if yrs >= 0.25 else np.nan,
+        # Sharpe ratio: (annualised return - 5%) / annualised volatility of daily returns over the same window
+        sharpe_life=sharpe((((last / first) ** (365 / max((d1 - d0).days, 1)) - 1) * 100) if yrs >= 0.25 else np.nan, r),
+        sharpe_6m=sharpe(ret_since(182, True), r[r.index > d1 - pd.Timedelta(days=182)]),
+        sharpe_1y=sharpe(ret_since(365, True), r[r.index > d1 - pd.Timedelta(days=365)]),
     )
 
 
@@ -134,7 +149,19 @@ def rolling(s: pd.Series, nifty: pd.Series) -> pd.DataFrame:
         vol20=r.rolling(20, min_periods=15).std() * np.sqrt(AN) * 100,
         vol60=r.rolling(60, min_periods=40).std() * np.sqrt(AN) * 100,
         beta60=cov / var,
+        beta20=r.rolling(20, min_periods=15).cov(rn) / rn.rolling(20, min_periods=15).var(),
+        ret6m=trailing(s, 182), ret12m=trailing(s, 365),
+        sharpe6m=(((1 + trailing(s, 182) / 100) ** (365 / 182) - 1) - RF) / (r.rolling("182D", min_periods=100).std() * np.sqrt(AN)),
     ))
+
+
+def trailing(s: pd.Series, days: int) -> pd.Series:
+    """Return over the trailing `days` calendar days at each date, %; NaN until the series is that old."""
+    base_dates = s.index - pd.Timedelta(days=days)
+    base = s.asof(base_dates)
+    base.index = s.index
+    out = (s / base - 1) * 100
+    return out.where(base_dates >= s.index[0] - pd.Timedelta(days=3))
 
 
 def main() -> None:
@@ -170,8 +197,19 @@ def main() -> None:
         s = series[m["id"]]
         if len(s) < 2:
             continue
-        rows.append({**m, **stats(s, nifty, liquid)})
         rd = rolling(s, nifty)
+        # range of the rolling 60-day beta and volatility over the last 12 months (or since the first full window)
+        last12 = rd[rd.index > rd.index.max() - pd.Timedelta(days=365)]
+        rng = {}
+        for col, key in (("beta60", "beta"), ("vol60", "vol")):
+            v = last12[col].dropna()
+            if key == "beta":
+                v = v.abs()
+            rng[f"{key}60_max_12m"] = float(v.max()) if len(v) else np.nan
+            rng[f"{key}60_min_12m"] = float(v.min()) if len(v) else np.nan
+            rng[f"{key}60_max_12m_date"] = v.idxmax().strftime("%Y-%m-%d") if len(v) else ""
+            rng[f"{key}60_min_12m_date"] = v.idxmin().strftime("%Y-%m-%d") if len(v) else ""
+        rows.append({**m, **stats(s, nifty, liquid), **rng})
         rd.insert(0, "id", m["id"])
         daily.append(rd)
     funds = pd.DataFrame(rows)

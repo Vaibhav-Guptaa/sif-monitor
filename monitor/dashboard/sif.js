@@ -1,7 +1,8 @@
 /* SIF Competitor Monitor — drawings, controls and calcs. Data: funds, daily, alloc, holdings, trades, aum, sources. */
 (function () {
   const root = document.getElementById('sif');
-  const C = dash.colors || [];
+  // vivid, high-contrast series colours on a light page (fixed here so the claude.ai and static copies match)
+  const C = ['#2563eb', '#ea580c', '#16a34a', '#c026d3', '#dc2626', '#0891b2', '#ca8a04', '#7c3aed', '#db2777', '#65a30d', '#0f766e', '#9a3412', '#1e3a8a', '#be123c', '#4d7c0f', '#a21caf'];
   const col = (i) => C[i % Math.max(C.length, 1)] || 'var(--color-fg)';
   if (root) {
     root.style.setProperty('--sif-c-open', col(0));
@@ -16,9 +17,10 @@
   const CAT_SHORT = { 'Hybrid long-short': 'HLS', 'Equity long-short': 'ELS', 'Ex-top 100 long-short': 'Ex100', 'Active asset allocator': 'AAA', 'Sector rotation': 'SR' };
   const BENCH = ['nifty_tri', 'blend', 'debt65', 'arbitrage', 'liquid', 'nifty50'];
   const BENCH_STYLE = { nifty_tri: '6 3', blend: '3 3', debt65: '10 4', arbitrage: '1 3', liquid: '1 5', nifty50: '8 3 2 3' };
+  const BENCH_COLOR = { nifty_tri: '#111827', blend: '#64748b', debt65: '#a16207', arbitrage: '#0f766e', liquid: '#94a3b8', nifty50: '#374151' };
   const DEFAULT_HL = ['SIF-9', 'SIF-79', 'SIF-139', 'SIF-14', 'SIF-145'];
   const S = window.SIF = {
-    cat: 'Hybrid long-short', win: 'all', metric: 'idx', hl: [], slot: {}, bench: new Set(['nifty_tri', 'blend', 'debt65', 'arbitrage']),
+    cat: 'Hybrid long-short', win: 'all', metric: 'idx', hl: [], slot: {}, range: null, annual: true, bench: new Set(['nifty_tri', 'blend', 'debt65', 'arbitrage']),
     sort: { key: 'ret_inception', dir: -1 }, fund: null, kind: 'all', period: null, catInit: null,
   };
 
@@ -38,7 +40,7 @@
     if (cache.has(d)) return cache.get(d);
     const out = d.map((r) => {
       const o = { ...r };
-      for (const k of Object.keys(r)) if (!['id', 'kind', 'brand', 'sponsor', 'name', 'category', 'isin', 'first_date', 'last_date', 'fund'].includes(k)) o[k] = num(r[k]);
+      for (const k of Object.keys(r)) if (!['id', 'kind', 'brand', 'sponsor', 'name', 'category', 'isin', 'first_date', 'last_date', 'fund'].includes(k) && !k.endsWith('_date')) o[k] = num(r[k]);
       return o;
     });
     cache.set(d, out); return out;
@@ -49,7 +51,7 @@
     const by = new Map();
     for (const r of d) {
       if (!by.has(r.id)) by.set(r.id, []);
-      by.get(r.id).push({ date: parseDate(r.date), ds: r.date, nav: num(r.nav), idx: num(r.idx), dd: num(r.dd), vol20: num(r.vol20), vol60: num(r.vol60), beta60: num(r.beta60) });
+      by.get(r.id).push({ date: parseDate(r.date), ds: r.date, nav: num(r.nav), idx: num(r.idx), dd: num(r.dd), vol20: num(r.vol20), vol60: num(r.vol60), beta20: num(r.beta20), beta60: num(r.beta60), ret6m: num(r.ret6m), ret12m: num(r.ret12m), sharpe6m: num(r.sharpe6m) });
     }
     for (const a of by.values()) a.sort((x, y) => x.date - y.date);
     cache.set(d, by); return by;
@@ -73,15 +75,54 @@
     }
     return m;
   }
-  const label = (f) => (S.cat === 'all' && f.kind === 'SIF' ? f.brand + ' ' + (CAT_SHORT[f.category] || '') : f.brand);
+  const CATS = [
+    { key: 'Hybrid long-short', c: '#2563eb', what: 'Holds both shares and bonds, and may run a limited short book.',
+      rule: 'At least 25% in equity and 25% in debt. Unhedged short derivatives up to 25% of NAV.',
+      liq: 'Interval strategy: redemption at most twice a week, listed on an exchange.' },
+    { key: 'Equity long-short', c: '#ea580c', what: 'Mainly a share portfolio, with the option of short positions through derivatives.',
+      rule: 'At least 80% in equity. Unhedged short derivatives up to 25% of NAV.',
+      liq: 'Open-ended or interval; daily redemption or less often.' },
+    { key: 'Ex-top 100 long-short', c: '#16a34a', what: 'Shares outside the 100 largest companies (mid and small caps), plus shorts.',
+      rule: 'At least 65% outside the top 100 by AMFI market-cap rank; up to 35% may be in the top 100, including index derivatives. Unhedged shorts up to 25%, only in stocks outside the top 100.',
+      liq: 'Open-ended or interval; daily redemption or less often.' },
+    { key: 'Active asset allocator', c: '#9333ea', what: 'Moves freely between shares, bonds, InvITs and commodity derivatives.',
+      rule: 'No minimum in any asset class. Unhedged shorts up to 25%, in equity and debt only (not commodities).',
+      liq: 'Interval strategy: redemption at most twice a week, listed on an exchange.' },
+    { key: 'Sector rotation', c: '#db2777', what: 'Shares in at most four sectors at a time, rotated as views change.',
+      rule: 'At least 80% in equity of at most four sectors. Unhedged shorts up to 25%, taken at sector level: cannot be long and short the same sector.',
+      liq: 'Open-ended or interval; daily redemption or less often.' },
+    { key: 'Debt long-short', c: '#0f766e', what: 'Bonds across maturities, with short positions through exchange-traded debt derivatives.',
+      rule: 'Unhedged short through exchange-traded debt derivatives up to 25%.', liq: 'Interval strategy: redemption at most once a week.' },
+    { key: 'Sectoral debt long-short', c: '#64748b', what: 'Bonds of at least two sectors, with sector-level shorts.',
+      rule: 'At least two sectors, at most 75% in one. Unhedged shorts up to 25%, at sector level.', liq: 'Interval strategy: redemption at most once a week.' },
+  ];
+  const CATC = Object.fromEntries(CATS.map((c) => [c.key, c.c]));
+  function fams() {
+    const d = rows('families'); if (!d) return null;
+    if (cache.has(d)) return cache.get(d);
+    const out = d.map((r) => ({ ...r, aum: num(r.aum_sep_cr), ter: num(r.ter_direct), risk: num(r.risk_level) }));
+    cache.set(d, out); return out;
+  }
+  const fcr = (v) => (Number.isFinite(v) ? '₹' + f0(v) + ' cr' : '–');
+  // Fund names always read 'Platform (fund house)', plus that fund's AUM where it helps identify it
+  const AMC_SHORT = { 'Aditya Birla Sun Life': 'Aditya Birla', 'ICICI Prudential': 'ICICI Pru', 'Franklin Templeton': 'Franklin', 'Mahindra Manulife': 'Mahindra' };
+  function fmeta(code) { const R = fams(); const r = R ? R.find((x) => x.code === code) : null; return r ? { amc: AMC_SHORT[r.amc] || r.amc, aum: r.aum } : {}; }
+  const withHouse = (brand, code, category) => { const m_ = fmeta(code); return brand + (m_.amc ? ' (' + m_.amc + ')' : '') + (S.cat === 'all' && category ? ' ' + (CAT_SHORT[category] || '') : ''); };
+  const aumTxt = (code) => { const m_ = fmeta(code); return Number.isFinite(m_.aum) && m_.aum > 0 ? '₹' + d3.format(',.0f')(m_.aum) + ' cr' : ''; };
+  const label = (f) => (f.kind === 'SIF' ? withHouse(f.brand, f.id, f.category) : f.brand);
+  const labelAum = (f) => (f.kind === 'SIF' && aumTxt(f.id) ? label(f) + ' · ' + aumTxt(f.id) : label(f));
+  const allocLabel = (r) => withHouse(r.brand, r.code, r.category || 'Hybrid long-short');
+  const allocIn = (r) => S.cat === 'all' || (r.category || 'Hybrid long-short') === S.cat;
+  const famLabel = () => (S.cat === 'all' ? 'All SIF funds' : S.cat);
   const inCat = (f) => f.kind === 'SIF' && (S.cat === 'all' || f.category === S.cat);
 
   function ensureHL(F) {
     if (S.catInit === S.cat) return;
     S.catInit = S.cat;
     const pool = F.filter(inCat);
-    let hl = DEFAULT_HL.filter((c) => pool.some((f) => f.id === c));
-    if (!hl.length) hl = pool.slice().sort((a, b) => (b.ret_inception || -1e9) - (a.ret_inception || -1e9)).slice(0, 5).map((f) => f.id);
+    // every fund in the family is shown by default; colours go to the largest funds first
+    const aumOf = (f) => { const R = fams(); const r = R ? R.find((x) => x.code === f.id) : null; return r && Number.isFinite(r.aum) ? r.aum : -1; };
+    const hl = pool.slice().sort((a, b) => aumOf(b) - aumOf(a) || label(a).localeCompare(label(b))).map((f) => f.id);
     S.hl = hl; S.slot = {}; hl.forEach((c, i) => (S.slot[c] = i));
   }
   const colorOf = (id) => (id in S.slot ? col(S.slot[id]) : 'var(--cds-chart-muted)');
@@ -89,14 +130,13 @@
     const i = S.hl.indexOf(id);
     if (i >= 0) { S.hl.splice(i, 1); delete S.slot[id]; }
     else {
-      if (S.hl.length >= 6) { const out = S.hl.shift(); delete S.slot[out]; }
       const used = new Set(Object.values(S.slot));
       let s = 0; while (used.has(s)) s++;
       S.hl.push(id); S.slot[id] = s;
     }
   }
   function redraw(...names) { for (const n of names) dash.draw(n); }
-  const ALL = ['chips', 'score', 'ts', 'scatter', 'scnote', 'takeaway'];
+  const ALL = ['chips', 'score', 'ts', 'scatter', 'scnote', 'cons', 'constitle', 'constable', 'fundsel', 'ddtiles', 'hist', 'histnote', 'periodsel', 'trades', 'hold', 'holdnote', 'aum', 'aumtitle', 'aumnote'];
 
   function winStart(F, lastDate) {
     const days = { '1m': 30, '3m': 91, '6m': 182, '1y': 365 }[S.win];
@@ -119,7 +159,18 @@
       S[key] = b.getAttribute(attr); after();
     });
   }
-  seg('sif-win', 'data-win', 'win', () => redraw('ts', 'scatter', 'scnote'));
+  seg('sif-win', 'data-win', 'win', () => { S.range = null; redraw('ts', 'scatter', 'scnote'); });
+  function markWin(v) {
+    for (const x of document.querySelectorAll('#sif-win button')) { const on = x.getAttribute('data-win') === v; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    if (v) S.win = v;
+  }
+  const inFrom = document.getElementById('sif-from'), inTo = document.getElementById('sif-to');
+  for (const inp of [inFrom, inTo]) if (inp) inp.addEventListener('change', () => {
+    const a = parseDate(inFrom.value), b = parseDate(inTo.value);
+    if (a && b && b > a) { S.range = [a, b]; markWin(null); redraw('ts'); }
+  });
+  const btnReset = document.getElementById('sif-reset');
+  if (btnReset) btnReset.addEventListener('click', () => { S.range = null; markWin('all'); redraw('ts', 'scatter', 'scnote'); });
   seg('sif-metric', 'data-metric', 'metric', () => redraw('ts', 'tstitle'));
   seg('sif-kind', 'data-kind', 'kind', () => redraw('hold', 'holdnote'));
   for (const th of document.querySelectorAll('#score-table th button[data-sort]')) {
@@ -141,7 +192,7 @@
       const beta = new Map(funds.map((f) => [f.id, +f.beta_60d]));
       const r1 = (v) => (v === '' || v == null ? null : Math.round(+v * 10) / 10);
       return [...latest.values()].map((r) => ({
-        fund: r.fund, brand: r.brand, asof: r.asof, source: r.source,
+        fund: r.fund, code: r.code, brand: r.brand, category: r.category || 'Hybrid long-short', asof: r.asof, source: r.source,
         net_equity: r1(r.net_equity), implied: beta.has(r.code) && Number.isFinite(beta.get(r.code)) ? Math.round(beta.get(r.code) * 1000) / 10 : null,
         stock_fut_short: r1(r.stock_fut_short), index_fut: r1(r.index_fut),
         options: (+r.n_opt_written || 0) + ' / ' + (+r.n_opt_bought || 0) + ((r.index_put_bought === 'True') ? ' (index put)' : ''),
@@ -190,7 +241,10 @@
       b.type = 'button'; b.className = 'sif-chip' + (on ? ' on' : '') + (bench ? ' bench' : '');
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
       const i = document.createElement('i');
-      if (!bench && on) i.style.background = colorOf(id);
+      const c = bench ? BENCH_COLOR[id] : colorOf(id);
+      if (on) { b.style.borderColor = c; b.style.background = 'color-mix(in srgb, ' + c + ' 10%, transparent)'; }
+      if (!bench && on) i.style.background = c;
+      if (bench && on) i.style.borderTopColor = c;
       b.append(i, document.createTextNode(text));
       b.addEventListener('click', () => {
         if (bench) { S.bench.has(id) ? S.bench.delete(id) : S.bench.add(id); }
@@ -199,18 +253,22 @@
       });
       el.append(b);
     };
-    F.filter(inCat).sort((a, b) => label(a).localeCompare(label(b))).forEach((f) => mk(f.id, label(f), S.hl.includes(f.id), false));
+    F.filter(inCat).sort((a, b) => label(a).localeCompare(label(b))).forEach((f) => mk(f.id, labelAum(f), S.hl.includes(f.id), false));
     BENCH.forEach((id) => { const f = F.find((x) => x.id === id); if (f) mk(id, f.brand, S.bench.has(id), true); });
   });
 
   // ---------- scoreboard ----------
-  const SCORE_COLS = ['brand', 'first_date', 'aum', 'ret_1m', 'ret_3m', 'ret_6m', 'ret_1y', 'ret_inception', 'cagr', 'vol_life', 'vol_1y', 'vol_60d', 'beta_life', 'beta_dimson', 'beta_60d', 'alpha', 'max_dd', 'dd_now', 'up_capture', 'down_capture'];
+  // returns shown % a year (compound, actual days) by default; the toggle switches to plain period returns
+  const retKey = (c) => (S.annual && c.startsWith('ret_') && c !== 'ret_1m' ? c + '_ann' : c);   // a month annualised (x12) is noise
+  const NO_SHARPE = new Set(['debt65', 'liquid']);   // near-zero volatility makes their Sharpe meaningless
+  seg('sif-annual', 'data-annual', 'annualStr', () => { S.annual = S.annualStr !== 'period'; redraw('score', 'scatter', 'scnote'); });
+  const SCORE_COLS = ['brand', 'first_date', 'aum', 'ret_1m', 'ret_3m', 'ret_6m', 'ret_1y', 'ret_inception', 'vol_life', 'vol_1y', 'vol_60d', 'vol60_max_12m', 'vol60_min_12m', 'beta_life', 'beta_dimson', 'beta_60d', 'beta_20d', 'beta60_max_12m', 'beta60_min_12m', 'alpha', 'sharpe_life', 'sharpe_6m', 'sharpe_1y', 'max_dd', 'dd_now', 'up_capture', 'down_capture'];
   dash.draw('score', (tb) => {
     const F = funds(); if (!F) { tb.replaceChildren(); return; }
     ensureHL(F);
     const A = aumLatest() || new Map();
     const k = S.sort.key, dir = S.sort.dir;
-    const val = (f) => (k === 'aum' ? num((A.get(f.fund) || {}).aum_cr) : f[k]);
+    const val = (f) => (k === 'aum' ? num((A.get(f.fund) || {}).aum_cr) : f[retKey(k)]);
     const sifs = F.filter(inCat).sort((a, b) => {
       const x = val(a), y = val(b);
       if (typeof x === 'string' || typeof y === 'string') return dir * String(x).localeCompare(String(y));
@@ -229,11 +287,12 @@
         const td = document.createElement('td');
         if (c === 'brand') {
           const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = f.kind === 'SIF' && S.hl.includes(f.id) ? colorOf(f.id) : 'transparent';
-          td.append(sw, document.createTextNode(label(f)));
+          td.append(sw, document.createTextNode(labelAum(f)));
         } else if (c === 'first_date') { td.className = 'n'; td.textContent = f.kind === 'SIF' ? fmtMon(parseDate(f.first_date)) : '–'; }
         else if (c === 'aum') {
           td.className = 'n';
-          const a = A.get(f.fund);
+          let a = A.get(f.fund);
+          if (!a && f.kind === 'SIF') { const fr = (fams() || []).find((x) => x.code === f.id); if (fr && Number.isFinite(fr.aum)) a = { aum_cr: fr.aum, fund: f.fund, date: '2026-09-30', quality: 'Disclosed (via Groww)', source: 'Groww copy of the 30 Sep portfolio' }; }
           if (a) {
             const s = document.createElement('span'); s.textContent = f0(+a.aum_cr) + ' ';
             s.setAttribute('data-source', 'aum'); s.setAttribute('data-field', 'aum_cr'); s.setAttribute('data-where', 'fund=' + a.fund + '&date=' + a.date);
@@ -243,10 +302,11 @@
           } else td.textContent = '–';
         } else {
           td.className = 'n';
-          const v = f[c];
+          const v = NO_SHARPE.has(f.id) && c.startsWith('sharpe') ? NaN : f[retKey(c)];
           const isRet = c.startsWith('ret_') || c === 'cagr' || c === 'alpha';
-          const isBeta = c.startsWith('beta');
+          const isBeta = c.startsWith('beta') || c.startsWith('sharpe');
           td.textContent = fx(v, isBeta ? f2 : isRet ? sg1 : (c.endsWith('capture') ? f0 : f1));
+          if (f[c + '_date']) td.title = 'on ' + fmtDate(parseDate(f[c + '_date']));
           if ((isRet || c === 'dd_now' || c === 'max_dd') && v < 0 && f.kind === 'SIF' && isRet) td.classList.add('bad');
         }
         tr.append(td);
@@ -256,7 +316,7 @@
   });
 
   // ---------- time series ----------
-  const TS_TITLE = { idx: 'Growth of ₹100', dd: 'Drawdown from peak, %', vol60: 'Rolling 60-day volatility, % a year', vol20: 'Rolling 20-day volatility, % a year', beta60: 'Rolling 60-day beta to Nifty 50' };
+  const TS_TITLE = { idx: 'Growth of ₹100', dd: 'Drawdown from peak, %', vol60: 'Rolling 60-day volatility, % a year', vol20: 'Rolling 20-day volatility, % a year', beta60: 'Rolling 60-day beta to Nifty 50', beta20: 'Rolling 20-day beta to Nifty 50', ret6m: 'Trailing 6-month return, %', ret12m: 'Trailing 12-month return, %', sharpe6m: 'Trailing 6-month Sharpe ratio (risk-free 5%)' };
   dash.draw('tstitle', (el) => { el.textContent = TS_TITLE[S.metric]; });
 
   function chartFrame(el, height) {
@@ -274,96 +334,189 @@
     el.append(p);
   }
 
+  const isoDay = d3.utcFormat('%Y-%m-%d');
+  const tsColor = (s) => (s.kind === 'hl' ? colorOf(s.id) : BENCH_COLOR[s.id] || 'var(--color-fg-muted)');
+  // Full span = earliest launch among highlighted funds (or the benchmark history) to the last NAV date.
+  function tsDomain(F, D) {
+    const ref = D.get('nifty50') || [];
+    const last = d3.max(ref, (r) => r.date);
+    const firsts = S.hl.map((id) => D.get(id)).filter((a) => a && a.length).map((a) => a[0].date);
+    const full = [firsts.length ? d3.min(firsts) : (ref[0] || {}).date, last];
+    let a, b;
+    if (S.range) [a, b] = S.range; else { a = winStart(F, last) || full[0]; b = last; }
+    if (a < full[0]) a = full[0];
+    if (b > full[1]) b = full[1];
+    return { full, a, b };
+  }
+  function syncRange(dom) {
+    if (!inFrom || !inTo) return;
+    for (const inp of [inFrom, inTo]) { inp.min = isoDay(dom.full[0]); inp.max = isoDay(dom.full[1]); }
+    inFrom.value = isoDay(dom.a); inTo.value = isoDay(dom.b);
+  }
+  function tsSeries(F, D, a, b, metric) {
+    const ids = BENCH.filter((x) => S.bench.has(x)).map((id) => [id, 'bench']).concat(S.hl.map((id) => [id, 'hl']));
+    const out = [];
+    for (const [id, kind] of ids) {
+      if (metric === 'sharpe6m' && NO_SHARPE.has(id)) continue;
+      const arr = (D.get(id) || []).filter((r) => r.date >= a && r.date <= b);
+      if (arr.length < 2) continue;
+      let vals;
+      if (metric === 'idx' || metric === 'dd') {
+        const base = arr[0].idx; let peak = -Infinity;
+        vals = arr.map((r) => { const v = (r.idx / base) * 100; peak = Math.max(peak, v); return { date: r.date, v: metric === 'idx' ? v : (v / peak - 1) * 100 }; });
+      } else vals = arr.map((r) => ({ date: r.date, v: r[metric] })).filter((p) => Number.isFinite(p.v));
+      if (vals.length < 2) continue;
+      const f = F.find((x) => x.id === id);
+      out.push({ id, kind, vals, raw: arr, name: f ? labelAum(f) : id });
+    }
+    return out;
+  }
+
+  function drawMain(el, series, metric) {
+    el.replaceChildren();
+    if (!series.length) { failNote(el, 'empty'); return null; }
+    const W0 = Math.max(280, el.clientWidth || 520);
+    // tall and narrow so the slopes of low-volatility funds are readable
+    const { svg, tip, W, H } = chartFrame(el, W0 < 430 ? Math.round(W0 * 1.2) : Math.min(600, Math.round(W0 * 1.15)));
+    svg.attr('aria-label', TS_TITLE[metric] + ' for highlighted SIFs and benchmarks');
+    const all = series.flatMap((s) => s.vals);
+    const x = d3.scaleUtc().domain(d3.extent(all, (p) => p.date));
+    const ext = d3.extent(all, (p) => p.v);       // only what is shown: hiding a fund rescales the axis
+    const pad = (ext[1] - ext[0]) * 0.06 || 1;
+    const y = d3.scaleLinear().domain([ext[0] - pad, ext[1] + pad]).nice();
+    const meas = svg.append('g');
+    const widths = series.map((s) => meas.append('text').text(s.name).node().getComputedTextLength());
+    meas.remove();
+    const m = { t: 12, r: Math.min(W0 < 430 ? 120 : 210, (d3.max(widths) || 40) + 14), b: 26, l: 46 };
+    x.range([m.l, W - m.r]); y.range([H - m.b, m.t]);
+    const nx = Math.max(2, Math.floor((W - m.l - m.r) / 70));
+    svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(10).tickSize(-(W - m.l - m.r)).tickFormat(''));
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(nx).tickFormat(d3.utcFormat((x.domain()[1] - x.domain()[0]) / 864e5 > 150 ? '%b %y' : '%d %b')));
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(10));
+    const ref = metric === 'idx' ? 100 : ['beta60', 'beta20', 'dd', 'ret6m', 'ret12m', 'sharpe6m'].includes(metric) ? 0 : null;
+    if (ref !== null && ref >= y.domain()[0] && ref <= y.domain()[1]) svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(ref)).attr('y2', y(ref)).style('stroke', 'var(--cds-chart-reference)');
+    const line = d3.line().x((p) => x(p.date)).y((p) => y(p.v));
+    for (const s of series) {
+      const p = svg.append('path').datum(s.vals).attr('d', line).attr('fill', 'none').style('stroke', tsColor(s));
+      if (s.kind === 'bench') p.style('stroke-width', 1.6).style('stroke-dasharray', BENCH_STYLE[s.id]);
+      else p.style('stroke-width', 2.4);
+    }
+    const ends = series.map((s) => ({ s, y: y(s.vals[s.vals.length - 1].v), x: x(s.vals[s.vals.length - 1].date) }));
+    ends.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 12) ends[i].y = ends[i - 1].y + 12;
+    for (let i = ends.length - 2; i >= 0; i--) if (ends[i].y > H - m.b) ends[i].y = Math.min(ends[i].y, ends[i + 1].y - 12);
+    for (const e of ends) {
+      svg.append('circle').attr('cx', e.x).attr('cy', y(e.s.vals[e.s.vals.length - 1].v)).attr('r', 2.8).style('fill', tsColor(e.s));
+      svg.append('text').attr('x', W - m.r + 6).attr('y', e.y).attr('dy', '0.32em').text(e.s.name).style('fill', tsColor(e.s)).style('font-weight', e.s.kind === 'hl' ? 600 : 400);
+    }
+    const vline = svg.append('line').attr('y1', m.t).attr('y2', H - m.b).style('stroke', 'var(--cds-chart-axis)').style('display', 'none'); // SVG ignores the hidden attribute
+    const bis = d3.bisector((p) => p.date).right;
+    const fmtV = metric.startsWith('beta') || metric === 'sharpe6m' ? f2 : f1;
+    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W - m.l - m.r).attr('height', H - m.t - m.b).style('fill', 'transparent')
+      .on('pointermove', (ev) => {
+        const [px] = d3.pointer(ev); const dt = x.invert(px);
+        vline.attr('x1', px).attr('x2', px).style('display', null);
+        const lines = series.map((s) => { const i = bis(s.vals, dt) - 1; return i >= 0 ? [s, s.vals[i].v] : null; }).filter(Boolean).sort((a, b) => b[1] - a[1]);
+        tip.attr('hidden', null).html('');
+        tip.append('div').attr('class', 'muted').text(fmtDate(dt));
+        for (const [s, v] of lines) { const r = tip.append('div').attr('class', 'row'); r.append('span').text(s.name).style('color', tsColor(s)); r.append('span').text(fmtV(v)); }
+        const tw = tip.node().offsetWidth; const left = px + 14 + tw > W ? px - tw - 14 : px + 14;
+        tip.style('left', Math.max(0, left) + 'px').style('top', m.t + 'px');
+      })
+      .on('pointerleave', () => { tip.attr('hidden', ''); vline.style('display', 'none'); });
+    return { m, W };
+  }
+
+  // Period strip: Nifty 50 over the full span; drag to choose dates, drag the box to move it, click outside to reset.
+  function drawNav(el, D, dom, geom, onPick) {
+    el.replaceChildren();
+    const { m, W } = geom; const h = 58, base = h - 18;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${h}`).attr('role', 'img').attr('aria-label', 'Period selector: drag to choose the dates shown');
+    const xb = d3.scaleUtc().domain(dom.full).range([m.l, W - m.r]);
+    const ref = (D.get('nifty50') || []).filter((r) => r.date >= dom.full[0] && r.date <= dom.full[1]);
+    if (ref.length > 1) {
+      const yb = d3.scaleLinear().domain(d3.extent(ref, (r) => r.idx)).range([base, 6]);
+      svg.append('path').datum(ref).attr('d', d3.area().x((r) => xb(r.date)).y0(base).y1((r) => yb(r.idx))).style('fill', 'var(--cds-chart-grid)').style('stroke', 'var(--cds-chart-muted)');
+    }
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${base})`).call(d3.axisBottom(xb).ticks(Math.max(2, Math.floor((W - m.l - m.r) / 70))).tickFormat(d3.utcFormat('%b %y')));
+    svg.append('text').attr('x', 2).attr('y', base / 2).attr('dy', '0.32em').text('Period');
+    const brush = d3.brushX().extent([[m.l, 2], [W - m.r, base]]).on('brush end', (ev) => {
+      if (!ev.sourceEvent) return;
+      if (!ev.selection) { if (ev.type === 'end') onPick(null); return; }
+      const [a, b] = ev.selection.map((v) => d3.utcDay.round(xb.invert(v)));
+      if (b - a < 5 * 864e5) return;
+      onPick([a, b]);
+    });
+    // no box when the whole span is shown, so a drag anywhere starts a new selection
+    const whole = dom.a <= dom.full[0] && dom.b >= dom.full[1];
+    svg.append('g').attr('class', 'sif-brush').call(brush).call(brush.move, whole ? null : [xb(dom.a), xb(dom.b)]);
+  }
+
+  // Stats over the chosen period, for every line on the chart.
+  function drawStats(series, dom) {
+    const tb = document.getElementById('ts-stats'), cap = document.getElementById('ts-period');
+    if (cap) cap.textContent = fmtDate(dom.a) + ' to ' + fmtDate(dom.b) + ' (' + Math.round((dom.b - dom.a) / 864e5) + ' days)';
+    if (!tb) return;
+    const D = daily(); const nr = new Map();
+    const nf = (D.get('nifty50') || []);
+    for (let i = 1; i < nf.length; i++) nr.set(nf[i].ds, nf[i].idx / nf[i - 1].idx - 1);
+    tb.replaceChildren();
+    const rowsS = series.map((s) => {
+      const a = s.raw, rets = [];
+      for (let i = 1; i < a.length; i++) rets.push([a[i].ds, a[i].idx / a[i - 1].idx - 1]);
+      const ret = (a[a.length - 1].idx / a[0].idx - 1) * 100;
+      const vol = rets.length > 4 ? d3.deviation(rets, (r) => r[1]) * Math.sqrt(252) * 100 : NaN;
+      let peak = -Infinity, mdd = 0;
+      for (const r of a) { peak = Math.max(peak, r.idx); mdd = Math.min(mdd, (r.idx / peak - 1) * 100); }
+      const pr = rets.filter((r) => nr.has(r[0]));
+      let beta = NaN;
+      if (pr.length >= 10 && s.id !== 'nifty50') {
+        const mx = d3.mean(pr, (r) => nr.get(r[0])), my = d3.mean(pr, (r) => r[1]);
+        let cv = 0, vv = 0; for (const r of pr) { const dx = nr.get(r[0]) - mx; cv += dx * (r[1] - my); vv += dx * dx; }
+        beta = vv ? cv / vv : NaN;
+      } else if (s.id === 'nifty50') beta = 1;
+      const days = Math.max((a[a.length - 1].date - a[0].date) / 864e5, 1);
+      const ann = (Math.pow(1 + ret / 100, 365 / days) - 1) * 100;
+      const sh = NO_SHARPE.has(s.id) || !Number.isFinite(vol) || vol <= 0 ? NaN : (ann / 100 - 0.05) / (vol / 100);
+      return { s, ret, ann, vol, sh, mdd, beta, from: a[0].date };
+    }).sort((p, q) => q.ann - p.ann);
+    for (const r of rowsS) {
+      const tr = document.createElement('tr'); if (r.s.kind === 'bench') tr.className = 'bench';
+      const td0 = document.createElement('td'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = tsColor(r.s);
+      td0.append(sw, document.createTextNode(r.s.name + (r.from > dom.a ? ' *' : ''))); tr.append(td0);
+      for (const [v, f, bad] of [[r.ann, sg1, r.ann < 0], [r.ret, sg1, r.ret < 0], [r.vol, f1, false], [r.sh, f2, r.sh < 0], [r.mdd, f1, r.mdd < -2], [r.beta, f2, false]]) {
+        const td = document.createElement('td'); td.className = 'n' + (bad && r.s.kind === 'hl' ? ' bad' : ''); td.textContent = fx(v, f); tr.append(td);
+      }
+      tb.append(tr);
+    }
+  }
+
   dash.draw('ts', (el) => {
     const F = funds(), D = daily();
     if (!F || !D) { failNote(el, dash.data(!F ? 'funds' : 'daily').status); return; }
     ensureHL(F);
     const metric = S.metric;
-    const lastDate = d3.max(D.get('nifty50') || [], (r) => r.date);
-    const start = winStart(F, lastDate);
-    const others = S.cat === 'all' ? [] : F.filter((f) => inCat(f) && !S.hl.includes(f.id)).map((f) => f.id);
-    const series = [];
-    const pushS = (id, kind) => {
-      let a = (D.get(id) || []).filter((r) => !start || r.date >= start);
-      if (a.length < 2) return;
-      let vals;
-      if (metric === 'idx' || metric === 'dd') {
-        const base = a[0].idx; let peak = -Infinity;
-        vals = a.map((r) => { const v = (r.idx / base) * 100; peak = Math.max(peak, v); return { date: r.date, v: metric === 'idx' ? v : (v / peak - 1) * 100 }; });
-      } else vals = a.map((r) => ({ date: r.date, v: r[metric] })).filter((p) => Number.isFinite(p.v));
-      if (vals.length < 2) return;
-      const f = F.find((x) => x.id === id);
-      series.push({ id, kind, vals, name: f ? label(f) : id });
-    };
-    others.forEach((id) => pushS(id, 'other'));
-    BENCH.filter((b) => S.bench.has(b)).forEach((id) => pushS(id, 'bench'));
-    S.hl.forEach((id) => pushS(id, 'hl'));
-    if (!series.length) { failNote(el, 'empty'); return; }
-
-    // tall and narrow so the slopes of low-volatility funds are readable
-    const wNow = el.clientWidth || 600;
-    const { svg, tip, W, H } = chartFrame(el, wNow < 560 ? 420 : Math.min(620, Math.round(wNow * 0.72)));
-    svg.attr('aria-label', TS_TITLE[metric] + ' for highlighted SIFs and benchmarks');
-    const all = series.flatMap((s) => s.vals);
-    const x = d3.scaleUtc().domain(d3.extent(all, (p) => p.date));
-    const focus = series.filter((s) => s.kind !== 'other');
-    const ext = d3.extent((focus.length ? focus : series).flatMap((s) => s.vals), (p) => p.v);
-    const pad = (ext[1] - ext[0]) * 0.06 || 1;
-    const y = d3.scaleLinear().domain([ext[0] - pad, ext[1] + pad]).nice();
-    // measure end labels for the right margin
-    const hlS = series.filter((s) => s.kind === 'hl' || s.kind === 'bench');
-    const meas = svg.append('g');
-    const widths = hlS.map((s) => { const t = meas.append('text').text(s.name); const w = t.node().getComputedTextLength(); return w; });
-    meas.remove();
-    const yTick = svg.append('text').text(d3.format('.1f')(y.domain()[1])); const yw = yTick.node().getComputedTextLength(); yTick.remove();
-    const m = { t: 12, r: Math.min(150, (d3.max(widths) || 40) + 14), b: 26, l: yw + 14 };
-    x.range([m.l, W - m.r]); y.range([H - m.b, m.t]);
-    const nx = Math.max(2, Math.floor((W - m.l - m.r) / 90));
-    svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(6).tickSize(-(W - m.l - m.r)).tickFormat(''));
-    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(nx).tickFormat(d3.utcFormat('%b %y')));
-    svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(6));
-    const ref = metric === 'idx' ? 100 : metric === 'beta60' ? 0 : (metric === 'dd' ? 0 : null);
-    if (ref !== null && ref >= y.domain()[0] && ref <= y.domain()[1]) svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(ref)).attr('y2', y(ref)).style('stroke', 'var(--cds-chart-reference)');
-    const line = d3.line().x((p) => x(p.date)).y((p) => y(p.v));
-    const clipId = 'ts-clip-' + Math.random().toString(36).slice(2, 8);
-    svg.append('clipPath').attr('id', clipId).append('rect').attr('x', m.l).attr('y', m.t).attr('width', W - m.l - m.r).attr('height', H - m.t - m.b);
-    for (const s of series) {
-      const p = svg.append('path').datum(s.vals).attr('d', line).attr('fill', 'none').attr('clip-path', 'url(#' + clipId + ')');
-      if (s.kind === 'other') p.style('stroke', 'var(--cds-chart-muted)').style('stroke-width', 1).style('opacity', 0.55);
-      else if (s.kind === 'bench') p.style('stroke', 'var(--color-fg-muted)').style('stroke-width', 1.4).style('stroke-dasharray', BENCH_STYLE[s.id]);
-      else p.style('stroke', colorOf(s.id)).style('stroke-width', 2.2);
-    }
-    // end labels, nudged apart
-    const ends = hlS.map((s) => ({ s, y: y(s.vals[s.vals.length - 1].v), x: x(s.vals[s.vals.length - 1].date) }));
-    ends.sort((a, b) => a.y - b.y);
-    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 12) ends[i].y = ends[i - 1].y + 12;
-    for (let i = ends.length - 2; i >= 0; i--) if (ends[i].y > H - m.b) ends[i].y = Math.min(ends[i].y, ends[i + 1].y - 12);
-    for (const e of ends) {
-      svg.append('circle').attr('cx', e.x).attr('cy', y(e.s.vals[e.s.vals.length - 1].v)).attr('r', 2.5).style('fill', e.s.kind === 'hl' ? colorOf(e.s.id) : 'var(--color-fg-muted)');
-      svg.append('text').attr('x', W - m.r + 6).attr('y', e.y).attr('dy', '0.32em').text(e.s.name).style('fill', e.s.kind === 'hl' ? colorOf(e.s.id) : 'var(--cds-text-secondary)');
-    }
-    // tooltip
-    const vline = svg.append('line').attr('y1', m.t).attr('y2', H - m.b).style('stroke', 'var(--cds-chart-axis)').style('display', 'none'); // SVG ignores the hidden attribute
-    const bis = d3.bisector((p) => p.date).right;
-    const fmtV = metric === 'beta60' ? f2 : f1;
-    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W - m.l - m.r).attr('height', H - m.t - m.b).style('fill', 'transparent')
-      .on('pointermove', (ev) => {
-        const [px] = d3.pointer(ev); const dt = x.invert(px);
-        vline.attr('x1', px).attr('x2', px).style('display', null);
-        const lines = hlS.map((s) => { const i = bis(s.vals, dt) - 1; return i >= 0 ? [s, s.vals[i].v] : null; }).filter(Boolean).sort((a, b) => b[1] - a[1]);
-        tip.attr('hidden', null).html('');
-        tip.append('div').attr('class', 'muted').text(fmtDate(dt));
-        for (const [s, v] of lines) { const r = tip.append('div').attr('class', 'row'); r.append('span').text(s.name).style('color', s.kind === 'hl' ? colorOf(s.id) : null); r.append('span').text(fmtV(v)); }
-        const tw = tip.node().offsetWidth; const left = px + 14 + tw > W ? px - tw - 14 : px + 14;
-        tip.style('left', left + 'px').style('top', m.t + 'px');
-      })
-      .on('pointerleave', () => { tip.attr('hidden', ''); vline.style('display', 'none'); });
+    const dom = tsDomain(F, D);
+    el.replaceChildren();
+    const main = document.createElement('div'); main.className = 'sif-ts-main';
+    const nav = document.createElement('div'); nav.className = 'sif-ts-nav';
+    el.append(main, nav);
+    syncRange(dom);
+    const render = (d) => { const ser = tsSeries(F, D, d.a, d.b, metric); const g = drawMain(main, ser, metric); drawStats(tsSeries(F, D, d.a, d.b, 'idx'), d); return g; };
+    const geom = render(dom);
+    if (!geom) return;
+    drawNav(nav, D, dom, geom, (r) => {
+      if (!r) { S.range = null; markWin('all'); redraw('ts', 'scatter', 'scnote'); return; }
+      S.range = r; markWin(null);
+      const d = { full: dom.full, a: r[0], b: r[1] };
+      syncRange(d); render(d);
+    });
   });
 
   // ---------- scatter ----------
-  const WIN_FIELD = { '1m': 'ret_1m', '3m': 'ret_3m', '6m': 'ret_6m', '1y': 'ret_1y', all: 'ret_inception', common: 'ret_inception' };
+  const WIN_FIELD = { '1m': 'ret_1m_ann', '3m': 'ret_3m_ann', '6m': 'ret_6m_ann', '1y': 'ret_1y_ann', all: 'ret_inception_ann', common: 'ret_inception_ann' };
   const WIN_NAME = { '1m': '1 month', '3m': '3 months', '6m': '6 months', '1y': '1 year', all: 'since launch', common: 'since launch' };
-  dash.draw('scnote', (el) => { el.textContent = 'Return over ' + WIN_NAME[S.win]; });
+  dash.draw('scnote', (el) => { el.textContent = 'Return over ' + WIN_NAME[S.win] + ', % a year'; });
   dash.draw('scatter', (el) => {
     const F = funds(); if (!F) { failNote(el, dash.data('funds').status); return; }
     ensureHL(F);
@@ -398,7 +551,7 @@
       c.on('pointerenter', () => {
         tip.attr('hidden', null).html('');
         tip.append('div').text(label(p.f)).style('font-weight', 600);
-        const r1 = tip.append('div').attr('class', 'row'); r1.append('span').text('Return'); r1.append('span').text(sg1(p.y) + '%');
+        const r1 = tip.append('div').attr('class', 'row'); r1.append('span').text('Return, % a year'); r1.append('span').text(sg1(p.y) + '%');
         const r2 = tip.append('div').attr('class', 'row'); r2.append('span').text('Volatility'); r2.append('span').text(f1(p.x) + '%');
         const r3 = tip.append('div').attr('class', 'row'); r3.append('span').text('Beta 60d'); r3.append('span').text(fx(p.f.beta_60d, f2));
         const tw = tip.node().offsetWidth; tip.style('left', (cx + 12 + tw > W ? cx - tw - 12 : cx + 12) + 'px').style('top', Math.max(0, cy - 30) + 'px');
@@ -406,72 +559,170 @@
     }
   });
 
-  // ---------- AUM ----------
+  // ---------- AUM (30 Sep 2026 disclosures, every fund in the selected family) ----------
+  dash.draw('aumtitle', (el) => { el.textContent = 'Assets under management: ' + famLabel(); });
   dash.draw('aum', (el) => {
-    const A = aumLatest(), F = funds();
-    if (!A || !F) { failNote(el, dash.data('aum').status); return; }
-    const pts = [...A.values()].map((a) => ({ a, v: +a.aum_cr })).sort((p, q) => q.v - p.v);
-    const { svg, tip, W } = chartFrame(el, 22 * pts.length + 30);
-    svg.attr('aria-label', 'Latest assets under management by hybrid long-short fund');
-    const meas = svg.append('text').text('Platinum'); const lw = meas.node().getComputedTextLength() + 10; meas.remove();
-    const m = { t: 6, r: 110, b: 6, l: lw };
+    const R = fams(); if (!R) { failNote(el, dash.data('families').status); return; }
+    const pts = R.filter((r) => (S.cat === 'all' || r.category === S.cat) && Number.isFinite(r.aum) && r.aum > 0)
+      .map((r) => ({ r, v: r.aum, lab: r.family + ' (' + r.amc + ')' + (S.cat === 'all' ? ' · ' + (CAT_SHORT[r.category] || '') : '') })).sort((p, q) => q.v - p.v);
+    if (!pts.length) { el.replaceChildren(); const p = document.createElement('p'); p.className = 'note'; p.textContent = 'No AUM disclosed yet in this family.'; el.append(p); return; }
+    const { svg, tip, W } = chartFrame(el, 20 * pts.length + 12);
+    svg.attr('aria-label', 'AUM on 30 Sep 2026 by fund, ' + famLabel());
+    const meas = svg.append('g'); const lw = d3.max(pts, (p) => meas.append('text').text(p.lab).node().getComputedTextLength()) + 10; meas.remove();
+    const m = { t: 4, r: 80, b: 6, l: lw };
     const x = d3.scaleLinear().domain([0, d3.max(pts, (p) => p.v)]).range([m.l, W - m.r]);
     pts.forEach((p, i) => {
-      const yy = m.t + i * 22;
-      svg.append('text').attr('x', m.l - 8).attr('y', yy + 9).attr('dy', '0.32em').attr('text-anchor', 'end').text(p.a.brand);
-      svg.append('rect').attr('x', m.l).attr('y', yy + 2).attr('height', 14).attr('width', Math.max(1, x(p.v) - m.l)).attr('rx', 2)
-        .style('fill', p.a.quality !== 'Reported' ? col(0) : 'color-mix(in srgb, ' + col(0) + ' 45%, transparent)');
-      svg.append('text').attr('x', x(p.v) + 6).attr('y', yy + 9).attr('dy', '0.32em').text(f0(p.v) + (p.a.quality === 'Reported' ? ' (reported)' : '') + ' · ' + fmtMon(parseDate(p.a.date)))
-        .attr('data-source', 'aum').attr('data-field', 'aum_cr').attr('data-where', 'fund=' + p.a.fund + '&date=' + p.a.date);
+      const yy = m.t + i * 20;
+      svg.append('text').attr('x', m.l - 8).attr('y', yy + 8).attr('dy', '0.32em').attr('text-anchor', 'end').text(p.lab);
+      svg.append('rect').attr('x', m.l).attr('y', yy + 2).attr('height', 13).attr('width', Math.max(1, x(p.v) - m.l)).attr('rx', 2).style('fill', CATC[p.r.category] || col(0));
+      svg.append('text').attr('x', x(p.v) + 6).attr('y', yy + 8).attr('dy', '0.32em').text('₹' + f0(p.v));
     });
   });
   dash.draw('aumnote', (el) => {
-    const d = rows('aum'); if (!d) { el.textContent = '—'; return; }
-    const ind = d.filter((r) => r.kind === 'Industry').sort((a, b) => (a.date < b.date ? 1 : -1));
-    const h = ind.find((r) => r.brand === 'Hybrid long-short'), all = ind.find((r) => r.brand === 'All SIFs');
-    el.replaceChildren();
-    const b = (r) => { const s = document.createElement('b'); s.className = 'num'; s.textContent = '₹' + f0(+r.aum_cr) + ' cr'; s.setAttribute('data-source', 'aum'); s.setAttribute('data-field', 'aum_cr'); s.setAttribute('data-where', 'brand=' + encodeURIComponent(r.brand) + '&date=' + r.date); return s; };
-    if (h && all) el.append('Category total on ' + fmtDate(parseDate(h.date)) + ': ', b(h), ' in hybrid long-short, ', b(all), ' across all SIFs (AMFI, as reported). Bars are month-end net assets of the latest disclosed portfolio: Arudha from its own file, the rest from the same disclosure via Groww. The 30 Sep fund figures sum to 99.5% of AMFI\'s hybrid long-short total.');
+    const R = fams(), d = rows('aum'); if (!R || !d) { el.textContent = '—'; return; }
+    const ind = d.filter((r) => r.kind === 'Industry' && r.date === '2026-09-30');
+    const sel = R.filter((r) => S.cat === 'all' || r.category === S.cat);
+    const tot = d3.sum(sel, (r) => r.aum || 0);
+    const amfi = ind.find((r) => r.brand === (S.cat === 'all' ? 'All SIFs' : S.cat));
+    el.textContent = '₹ crore, month-end net assets in each fund\'s 30 Sep 2026 portfolio disclosure (AMC file or Groww\'s copy). Total ₹' + f0(tot) + ' cr across ' + sel.filter((r) => r.aum > 0).length + ' funds'
+      + (amfi ? ', ' + f0(tot / +amfi.aum_cr * 100) + '% of AMFI\'s ₹' + f0(+amfi.aum_cr) + ' cr for ' + (S.cat === 'all' ? 'all SIFs' : S.cat.toLowerCase()) : '') + '. Funds launched after September have no disclosure yet.';
   });
 
-  // ---------- construction chart ----------
-  const SEGS = [['hedged', 'Hedged stocks'], ['open', 'Unhedged stocks'], ['reit', 'REITs, InvITs, units'], ['debt', 'Bonds, G-secs'], ['mm', 'Money market'], ['cash', 'Cash, TREPS, margin'], ['resid', 'Debt and cash']];
+  // ---------- trading-strategy breakdown: every rupee of NAV in one bucket; the buckets add to 100 ----------
+  // Equity buckets are built stock by stock from the disclosed stock, futures and options lines.
+  const SEGS = [
+    ['arb', 'Arbitrage', 'Buys a share and sells its future (same stock). Earns the futures premium, about a money-market rate; no market risk.', '#60a5fa', 'eq'],
+    ['cc', 'Covered call', 'Holds the share and sells a call on it. Earns the premium plus gains up to the strike; keeps the full fall.', '#f97316', 'eq'],
+    ['cc_put', 'Covered call + put written', 'Holds the share, sells a call and a put on it (covered strangle). More premium; more loss if the share falls.', '#9a3412', 'eq'],
+    ['collar', 'Collar', 'Holds the share, sells a call and buys a put on it. Gains capped above, losses capped below.', '#eab308', 'eq'],
+    ['prot', 'Protective put', 'Holds the share and buys a put on it. Pays premium to cap the loss.', '#14b8a6', 'eq'],
+    ['pheld', 'Share + put written', 'Holds the share and also sells a put on it: more exposure to a fall.', '#be185d', 'eq'],
+    ['ow', 'Share + options written, type not disclosed', 'Holds the share and has sold options on it; the source (Groww\'s copy) does not say calls or puts.', '#fdba74', 'eq'],
+    ['open', 'Plain long stock', 'Owns the share with nothing against it: the full gain and the full loss. This is what drives beta.', '#dc2626', 'eq'],
+    ['optb', 'Options bought, premium', 'Premium paid for options, mostly puts (Nifty or stock). Can be lost in full.', '#0891b2', 'eq'],
+    ['reit', 'REITs and InvITs', 'Listed trusts that own offices, roads or power lines and pay out rent or tolls.', '#a855f7', 'fi'],
+    ['units', 'Fund units', 'Units of other funds (liquid, debt or equity ETFs).', '#c4b5fd', 'fi'],
+    ['gsec', 'G-secs and state loans', 'Government bonds.', '#166534', 'fi'],
+    ['corp', 'Corporate bonds', 'Loans to companies, usually one to five years.', '#16a34a', 'fi'],
+    ['mm', 'Money market', 'Treasury bills, commercial paper, certificates of deposit: loans of under a year.', '#86efac', 'fi'],
+    ['cash', 'Cash, TREPS, margin', 'Overnight lending and margin posted for futures; net of option premium received.', '#94a3b8', 'fi'],
+    ['resid', 'Debt and cash, not split', 'Older snapshots only.', '#cbd5e1', 'fi'],
+  ];
+  const SEGC = Object.fromEntries(SEGS.map((x) => [x[0], x[3]]));
+  const SEGN = Object.fromEntries(SEGS.map((x) => [x[0], x[1]]));
   function segVals(r) {
     const n_ = (k) => num(r[k]) || 0;
-    const eq = n_('equity_long'), h = Math.min(n_('hedged_same_stock'), eq);
-    return { hedged: h, open: eq - h, reit: n_('reit_invit') + n_('mf_units'), debt: n_('debt'), mm: n_('money_market'), cash: n_('cash') + n_('irs'), resid: r.source === 'groww_page' ? n_('debt_cash_residual') : 0 };
+    if (r.s_plain !== undefined && r.s_plain !== '' && r.source !== 'groww_page') {
+      const prem = n_('s_opt_premium');
+      return { arb: n_('s_arb'), cc: n_('s_cc'), cc_put: n_('s_cc_put'), collar: n_('s_collar'), prot: n_('s_prot_put'), pheld: n_('s_put_on_held'),
+        ow: n_('s_opt_untyped'), open: n_('s_plain'), optb: Math.max(prem, 0), reit: n_('f_reit'), units: n_('f_units'), gsec: n_('f_gsec'),
+        corp: n_('f_corp'), mm: n_('f_mm'), cash: n_('f_cash') + Math.min(prem, 0), resid: 0 };
+    }
+    const eq = n_('equity_long'), arb = Math.min(n_('hedged_same_stock'), eq), opt = n_('options_premium');
+    return { arb, open: eq - arb, reit: n_('reit_invit'), units: n_('mf_units'), corp: n_('debt'), mm: n_('money_market'),
+      optb: Math.max(opt, 0), cash: n_('cash') + n_('irs') + Math.min(opt, 0), resid: r.source === 'groww_page' ? n_('debt_cash_residual') : 0 };
   }
+  function overlay(r) {
+    const n_ = (k) => num(r[k]) || 0;
+    const has = r.ov_long_fut !== undefined && r.ov_long_fut !== '';
+    return { longFut: has ? n_('ov_long_fut') : n_('stock_fut_long'), shortFut: has ? n_('ov_short_fut') : n_('naked_stock_short'), idx: n_('index_fut'), net: n_('net_equity'),
+      nPut: n_('n_naked_put'), nCall: n_('n_naked_call'), nStr: n_('n_short_strangle'), nU: n_('n_untyped_unheld'),
+      idxPB: n_('n_idx_p_bought') + n_('n_idx_u_bought'), idxCB: n_('n_idx_c_bought'), idxW: n_('n_idx_p_written') + n_('n_idx_c_written') + n_('n_idx_u_written'),
+      premIdxB: n_('prem_idx_p_bought') + n_('prem_idx_u_bought') + n_('prem_idx_c_bought') };
+  }
+  dash.draw('conskey', (el) => {
+    el.replaceChildren();
+    for (const [grp, title] of [['eq', 'Equity, by trading strategy'], ['fi', 'Debt, cash and other income']]) {
+      const h = document.createElement('div'); h.className = 'sif-key-h'; h.textContent = title; el.append(h);
+      const box = document.createElement('div'); box.className = 'sif-key';
+      for (const [k, name, desc, c, g] of SEGS) {
+        if (g !== grp || k === 'resid') continue;
+        const d = document.createElement('div'); const i = document.createElement('i'); i.style.background = c;
+        const b = document.createElement('b'); b.textContent = name; const sp = document.createElement('span'); sp.textContent = desc;
+        d.append(i, b, sp); box.append(d);
+      }
+      el.append(box);
+    }
+  });
+  dash.draw('constitle', (el) => { el.textContent = 'How each fund\'s money is invested: ' + famLabel(); });
   dash.draw('cons', (el) => {
     const L = allocLatest(); if (!L) { failNote(el, dash.data('alloc').status); return; }
-    const list = [...L.values()].sort((a, b) => num(b.net_equity) - num(a.net_equity));
-    const { svg, tip, W } = chartFrame(el, 24 * list.length + 34);
-    svg.attr('aria-label', 'Asset mix of each hybrid long-short fund at its latest disclosure');
-    const meas = svg.append('text').text('Platinum'); const lw = meas.node().getComputedTextLength() + 12; meas.remove();
-    const m = { t: 4, r: 12, b: 24, l: lw };
+    const F = funds() || [];
+    const beta = new Map(F.map((f) => [f.fund, f.beta_60d]));
+    const list = [...L.values()].filter(allocIn);
+    if (!list.length) { el.replaceChildren(); const p = document.createElement('p'); p.className = 'note'; p.textContent = 'No portfolio disclosed yet in this family.'; el.append(p); return; }
+    const eqOf = (v) => SEGS.filter((x) => x[4] === 'eq').reduce((t, x) => t + (v[x[0]] || 0), 0);
+    list.sort((a, b) => eqOf(segVals(b)) - eqOf(segVals(a)));
+    // AUM-weighted family total first
+    const wsum = d3.sum(list, (r) => +r.aum_cr || 0);
+    const tot = { brand: 'Family total', total: true, asof: d3.max(list, (r) => r.asof), source: '' };
+    const tv = {}; const to = { longFut: 0, shortFut: 0, idx: 0, net: 0 };
+    for (const r of list) { const w = (+r.aum_cr || 0) / (wsum || 1); const v = segVals(r); for (const k in v) tv[k] = (tv[k] || 0) + w * v[k]; const o = overlay(r); for (const k in to) to[k] += w * o[k]; }
+    const rowsAll = (list.length > 1 && wsum > 0 ? [{ r: tot, v: tv, o: to }] : []).concat(list.map((r) => ({ r, v: segVals(r), o: overlay(r) })));
+    const RH = 40;
+    const { svg, tip, W } = chartFrame(el, RH * rowsAll.length + 34);
+    svg.attr('aria-label', 'Trading-strategy breakdown of each fund in ' + famLabel());
+    const meas = svg.append('g');
+    const lw = d3.max(rowsAll, (x) => meas.append('text').text(x.r.total ? x.r.brand : allocLabel(x.r)).node().getComputedTextLength()) + 14; meas.remove();
+    const wide = W > 760;
+    const m = { t: 18, r: wide ? 250 : 10, b: 24, l: Math.max(lw, 70) };
     const x = d3.scaleLinear().domain([0, 100]).range([m.l, W - m.r]);
-    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${m.t + 24 * list.length + 2})`).call(d3.axisBottom(x).ticks(5).tickFormat((d) => d + '%'));
-    list.forEach((r, i) => {
-      const yy = m.t + i * 24; const v = segVals(r); let acc = 0;
-      svg.append('text').attr('x', m.l - 8).attr('y', yy + 10).attr('dy', '0.32em').attr('text-anchor', 'end').text(r.brand);
-      for (const [k, name] of SEGS) {
-        const w = Math.max(0, v[k]); if (w <= 0.05) continue;
-        const rect = svg.append('rect').attr('x', x(acc)).attr('y', yy + 2).attr('height', 16).attr('width', Math.max(0.5, x(acc + w) - x(acc))).style('fill', 'var(--sif-c-' + k + ')');
-        rect.on('pointerenter', (ev) => {
-          tip.attr('hidden', null).html('');
-          tip.append('div').text(r.brand + ' · ' + fmtDate(parseDate(r.asof))).style('font-weight', 600);
-          for (const [kk, nn] of SEGS) if (v[kk] > 0.05) { const row = tip.append('div').attr('class', 'row'); row.append('span').text(nn); row.append('span').text(f1(v[kk]) + '%'); }
-          const [px] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.min(px + 12, W - tw - 4) + 'px').style('top', yy + 22 + 'px');
-        }).on('pointerleave', () => tip.attr('hidden', ''));
+    svg.append('g').attr('class', 'grid').attr('transform', `translate(0,${m.t + RH * rowsAll.length})`).call(d3.axisBottom(x).ticks(10).tickSize(-(RH * rowsAll.length)).tickFormat(''));
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${m.t + RH * rowsAll.length + 2})`).call(d3.axisBottom(x).ticks(10).tickFormat((d) => d + '%'));
+    if (wide) svg.append('text').attr('x', W - m.r + 12).attr('y', 6).text('Beyond the 100').style('font-weight', 600).style('fill', 'var(--color-fg)');
+    rowsAll.forEach(({ r, v, o }, i) => {
+      const yy = m.t + i * RH; let acc = 0;
+      if (r.total) svg.append('rect').attr('x', 0).attr('y', yy - 6).attr('width', W).attr('height', RH - 2).style('fill', 'var(--cds-chart-grid)');
+      svg.append('text').attr('x', m.l - 8).attr('y', yy + 10).attr('dy', '0.32em').attr('text-anchor', 'end').text(r.total ? r.brand : allocLabel(r)).style('fill', 'var(--color-fg)').style('font-weight', 600);
+      svg.append('text').attr('x', m.l - 8).attr('y', yy + 25).attr('text-anchor', 'end').text(r.total ? 'AUM-weighted · ₹' + f0(wsum) + ' cr' : (r.aum_cr ? '₹' + f0(+r.aum_cr) + ' cr' : aumTxt(r.code))).style('font-size', '10px');
+      const b = r.total ? NaN : beta.get(r.fund);
+      const show = (ev) => {
+        tip.attr('hidden', null).html('');
+        tip.append('div').text(r.total ? famLabel() + ', AUM-weighted · ' + list.length + ' funds' : allocLabel(r) + ' · ' + fmtDate(parseDate(r.asof)) + ' · ' + (r.source === 'official' ? 'AMC file' : 'via Groww') + (r.aum_cr ? ' · ₹' + f0(+r.aum_cr) + ' cr' : '')).style('font-weight', 600);
+        let t = 0;
+        for (const [grp, title] of [['eq', 'Equity'], ['fi', 'Debt, cash, other']]) {
+          const g = SEGS.filter((s_) => s_[4] === grp && v[s_[0]] > 0.05); if (!g.length) continue;
+          const sub = d3.sum(g, (s_) => v[s_[0]]);
+          const hr = tip.append('div').attr('class', 'row').style('margin-top', '4px').style('font-weight', 600); hr.append('span').text(title); hr.append('span').text(f1(sub) + '%');
+          for (const [k, nn, , c] of g) { t += v[k]; const row = tip.append('div').attr('class', 'row'); row.append('span').html('<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 6px 0 8px;background:' + c + '"></i>' + nn); row.append('span').text(f1(v[k]) + '%'); }
+        }
+        const tr = tip.append('div').attr('class', 'row').style('border-top', '1px solid var(--color-border-line)').style('margin-top', '4px'); tr.append('span').text('Total'); tr.append('span').text(f1(t) + '%');
+        tip.append('div').attr('class', 'muted').style('margin-top', '6px').text('Beyond the 100 (futures at full value; options not tied to a held share):');
+        const items = [['Long stock futures', sg1(o.longFut) + '%'], ['Naked short stock futures', sg1(o.shortFut) + '%'], ['Index futures', sg1(o.idx) + '%']];
+        if (!r.total) items.push(['Naked puts written (stocks not held)', String(o.nPut)], ['Naked calls written (stocks not held)', String(o.nCall)], ['Short strangles on stocks not held', String(o.nStr)], ['Options written on stocks not held, type n/a', String(o.nU)], ['Nifty / index puts bought', String(o.idxPB) + (o.premIdxB ? ' (premium ' + f2(o.premIdxB) + '%)' : '')], ['Index options written', String(o.idxW)]);
+        for (const [nn, val] of items) { const row = tip.append('div').attr('class', 'row'); row.append('span').text(nn); row.append('span').text(val); }
+        const n1 = tip.append('div').attr('class', 'row').style('margin-top', '4px'); n1.append('span').text('Equity exposure before options (black line)'); n1.append('span').text(f1(o.net) + '%');
+        if (!r.total) { const n2 = tip.append('div').attr('class', 'row'); n2.append('span').text('Exposure the NAV shows, 60d beta x100 (diamond)'); n2.append('span').text(Number.isFinite(b) ? f1(b * 100) + '%' : '–'); }
+        const [px] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', yy + RH - 4 + 'px');
+      };
+      for (const [k] of SEGS) {
+        const w = Math.max(0, v[k] || 0); if (w <= 0.05) continue;
+        const x0 = x(acc), x1 = x(Math.min(100.5, acc + w));
+        svg.append('rect').attr('x', x0).attr('y', yy + 1).attr('height', 20).attr('width', Math.max(0.5, x1 - x0 - 0.6)).style('fill', SEGC[k])
+          .on('pointerenter', show).on('pointermove', show).on('pointerleave', () => tip.attr('hidden', ''));
+        if (x1 - x0 > 26) svg.append('text').attr('x', (x0 + x1) / 2).attr('y', yy + 11).attr('dy', '0.32em').attr('text-anchor', 'middle').text(f0(w)).style('fill', ['open', 'cc', 'cc_put', 'corp', 'gsec', 'optb', 'arb', 'pheld', 'reit'].includes(k) ? '#ffffff' : '#111827').style('font-size', '10.5px').style('pointer-events', 'none');
         acc += w;
+      }
+      const ne = Math.max(-5, Math.min(100, o.net));
+      svg.append('line').attr('x1', x(ne)).attr('x2', x(ne)).attr('y1', yy - 2).attr('y2', yy + 24).style('stroke', '#111827').style('stroke-width', 2.5).style('pointer-events', 'none');
+      if (Number.isFinite(b)) svg.append('path').attr('d', d3.symbol(d3.symbolDiamond, 46)()).attr('transform', `translate(${x(Math.max(-5, Math.min(100, b * 100)))},${yy + 29})`).style('fill', '#ffffff').style('stroke', '#111827').style('stroke-width', 1.5);
+      if (wide) {
+        const parts = [];
+        if (o.longFut > 0.05) parts.push('long fut +' + f1(o.longFut));
+        if (o.shortFut < -0.05) parts.push('short fut ' + f1(o.shortFut));
+        if (Math.abs(o.idx) > 0.05) parts.push('index ' + sg1(o.idx));
+        const opts = r.total ? [] : [o.nPut ? o.nPut + ' naked puts' : null, o.nCall ? o.nCall + ' naked calls' : null, o.nStr ? o.nStr + ' strangles' : null, o.nU ? o.nU + ' opts on unheld' : null, o.idxPB ? o.idxPB + ' Nifty puts' : null].filter(Boolean);
+        svg.append('text').attr('x', W - m.r + 12).attr('y', yy + 8).attr('dy', '0.32em').text(parts.join(', ') || 'no futures').style('font-size', '10px');
+        if (opts.length) svg.append('text').attr('x', W - m.r + 12).attr('y', yy + 22).attr('dy', '0.32em').text(opts.join(', ')).style('font-size', '10px');
       }
     });
   });
   dash.draw('constable', (tb) => {
     const c = dash.data('construction');
     tb.replaceChildren(); if (c.status !== 'ok' || !Array.isArray(c.data)) return;
-    for (const r of c.data) {
+    for (const r of c.data.filter((x) => S.cat === 'all' || x.category === S.cat)) {
       const tr = document.createElement('tr'); tr.setAttribute('data-key', r.fund);
-      const cells = [r.brand, r.asof ? fmtDate(parseDate(r.asof)) : '–', null, fx(r.net_equity, f1), fx(r.implied, f1), fx(r.stock_fut_short, f1), fx(r.index_fut, f1), r.options, String(r.n_stocks), fx(r.top10_share, f1), fx(r.eff_n, f1), r.long_lms, r.net_lms];
+      const cells = [withHouse(r.brand, r.code, r.category) + (aumTxt(r.code) ? ' · ' + aumTxt(r.code) : ''), r.asof ? fmtDate(parseDate(r.asof)) : '–', null, fx(r.net_equity, f1), fx(r.implied, f1), fx(r.stock_fut_short, f1), fx(r.index_fut, f1), r.options, String(r.n_stocks), fx(r.top10_share, f1), fx(r.eff_n, f1), r.long_lms, r.net_lms];
       cells.forEach((t, i) => {
         const td = document.createElement('td');
         if (i === 2) { td.className = 'l'; const p = document.createElement('span'); p.className = 'pill ' + r.source; p.textContent = r.source === 'official' ? 'AMC file' : 'via Groww'; td.append(p); }
@@ -486,9 +737,11 @@
   function fundRows() { const d = rows('alloc'); return d ? d.filter((r) => r.fund === S.fund).sort((a, b) => (a.asof < b.asof ? -1 : 1)) : null; }
   dash.draw('fundsel', (sel) => {
     const d = rows('alloc'); if (!d) { sel.replaceChildren(); return; }
-    const cnt = d3.rollup(d, (v) => v.length, (r) => r.fund);
-    const names = d3.rollup(d, (v) => v[0].brand, (r) => r.fund);
-    if (!S.fund) S.fund = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const dd = d.filter(allocIn);
+    const cnt = d3.rollup(dd, (v) => v.length, (r) => r.fund);
+    const names = d3.rollup(dd, (v) => allocLabel(v[0]) + (aumTxt(v[0].code) ? ' · ' + aumTxt(v[0].code) : ''), (r) => r.fund);
+    if (!cnt.size) { sel.replaceChildren(new Option('No disclosure in this family yet', '')); S.fund = null; return; }
+    if (!S.fund || !cnt.has(S.fund)) S.fund = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0];
     sel.replaceChildren(...[...names.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([k, n]) => new Option(n + (cnt.get(k) > 1 ? ' (' + cnt.get(k) + ' disclosures)' : ''), k)));
     sel.value = S.fund;
     sel.onchange = () => { S.fund = sel.value; S.period = null; redraw('ddtiles', 'hist', 'histnote', 'periodsel', 'trades', 'hold', 'holdnote'); };
@@ -506,8 +759,8 @@
     tile('AUM, ₹ cr', r.aum_cr ? f0(+r.aum_cr) : 'not in file', r.aum_cr ? 'alloc' : null, 'aum_cr', where);
     tile('Stocks held', String(+r.n_stocks), 'alloc', 'n_stocks', where);
     tile('Top 10, % of stock book', f1(+r.top10_share), 'alloc', 'top10_share', where);
-    tile('Hedged share of stocks', f1(+r.hedged_share) + '%', 'alloc', 'hedged_share', where);
-    tile('Net equity before options', f1(+r.net_equity) + '%', 'alloc', 'net_equity', where);
+    tile('Stocks held as arbitrage, % of stock book', f1(+r.hedged_share) + '%', 'alloc', 'hedged_share', where);
+    tile('Equity exposure before options', f1(+r.net_equity) + '%', 'alloc', 'net_equity', where);
     if (f) tile('Beta 60d (NAV)', fx(f.beta_60d, f2), 'funds', 'beta_60d', 'id=' + f.id);
   });
   dash.draw('hist', (el) => {
@@ -522,14 +775,14 @@
     svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickFormat((d) => d + '%'));
     for (const r of R) {
       const v = segVals(r); let acc = 0; const bx = x(r.asof), bw = x.bandwidth();
-      for (const [k] of SEGS) { const w = Math.max(0, v[k]); if (w <= 0.05) continue; svg.append('rect').attr('x', bx).attr('width', bw).attr('y', y(Math.min(100, acc + w))).attr('height', Math.max(0.5, y(acc) - y(Math.min(100, acc + w)))).style('fill', 'var(--sif-c-' + k + ')'); acc += w; }
+      for (const [k] of SEGS) { const w = Math.max(0, v[k]); if (w <= 0.05) continue; svg.append('rect').attr('x', bx).attr('width', bw).attr('y', y(Math.min(100, acc + w))).attr('height', Math.max(0.5, y(acc) - y(Math.min(100, acc + w)))).style('fill', SEGC[k] || 'var(--cds-chart-muted)'); acc += w; }
       if (r.aum_cr) svg.append('text').attr('x', bx + bw / 2).attr('y', m.t - 6).attr('text-anchor', 'middle').text('₹' + f0(+r.aum_cr));
       svg.append('rect').attr('x', bx).attr('width', bw).attr('y', m.t).attr('height', H - m.t - m.b).style('fill', 'transparent')
         .on('pointerenter', () => {
           tip.attr('hidden', null).html('');
           tip.append('div').text(fmtDate(parseDate(r.asof)) + (r.aum_cr ? ' · ₹' + f0(+r.aum_cr) + ' cr' : '')).style('font-weight', 600);
           for (const [kk, nn] of SEGS) if (v[kk] > 0.05) { const row = tip.append('div').attr('class', 'row'); row.append('span').text(nn); row.append('span').text(f1(v[kk]) + '%'); }
-          const row = tip.append('div').attr('class', 'row'); row.append('span').text('Net equity'); row.append('span').text(f1(+r.net_equity) + '%');
+          const row = tip.append('div').attr('class', 'row'); row.append('span').text('Equity exposure before options'); row.append('span').text(f1(+r.net_equity) + '%');
           const tw = tip.node().offsetWidth; tip.style('left', Math.min(bx + bw + 6, W - tw - 4) + 'px').style('top', m.t + 'px');
         }).on('pointerleave', () => tip.attr('hidden', ''));
     }
@@ -590,11 +843,113 @@
     const d = rows('sources'); tb.replaceChildren(); if (!d) return;
     for (const r of d) {
       const tr = document.createElement('tr'); tr.setAttribute('data-key', r.fund);
-      const cells = [r.brand, r.amfi_code, r.nav_from, r.nav_to, r.nav_groww_check || '–', r.holdings_source, r.holdings_asof || '–', (r.official_months || '').split(';').filter(Boolean).length + ' file(s)'];
+      const cells = [withHouse(r.brand, r.amfi_code, null), r.amfi_code, r.nav_from, r.nav_to, r.nav_groww_check || '–', r.holdings_source, r.holdings_asof || '–', (r.official_months || '').split(';').filter(Boolean).length + ' file(s)'];
       cells.forEach((t, i) => { const td = document.createElement('td'); td.textContent = t; if (i) td.className = 'l'; tr.append(td); });
       const td = document.createElement('td'); td.className = 'l';
       if (r.disclosure_page) { const a = document.createElement('a'); a.href = r.disclosure_page; a.target = '_blank'; a.rel = 'noopener'; a.textContent = new URL(r.disclosure_page).hostname.replace('www.', ''); td.append(a); } else td.textContent = 'not yet listed';
       tr.append(td); tb.append(tr);
+    }
+  });
+  // ---------- SIF families: every strategy, its family, SEBI type, official facts, 30 Sep AUM ----------
+  dash.draw('famasof', (el) => {
+    const R = fams(); if (!R) { el.textContent = '—'; return; }
+    const f = R.find((r) => r.amfi_fetched)?.amfi_fetched;
+    el.textContent = 'AUM as of 30 Sep 2026 (latest portfolio disclosures). Fund facts from AMFI summary documents' + (f ? ', fetched ' + fmtDate(parseDate(f)) : '') + '. Rules: SEBI Master Circular, 20 Mar 2026.';
+  });
+  dash.draw('famtiles', (el) => {
+    const R = fams(); if (!R) { el.textContent = '—'; return; }
+    const ind = (rows('aum') || []).filter((r) => r.kind === 'Industry' && r.date === '2026-09-30');
+    const all = num((ind.find((r) => r.brand === 'All SIFs') || {}).aum_cr);
+    const tot = d3.sum(R, (r) => r.aum || 0);
+    const live = new Set(R.map((r) => r.category));
+    const t = [['Families (SEBI types) with a fund', live.size + ' of ' + CATS.length], ['SIF houses', String(new Set(R.map((r) => r.family)).size)], ['Funds with a NAV', String(R.length)],
+      ['AUM, 30 Sep 2026', fcr(tot)], ['Share of AMFI industry total', Number.isFinite(all) ? f0(tot / all * 100) + '% of ₹' + f0(all) + ' cr' : '–']];
+    el.replaceChildren();
+    for (const [k, v] of t) { const d = document.createElement('div'); d.className = 'tile'; const s1 = document.createElement('span'); s1.textContent = k; const b = document.createElement('b'); b.textContent = v; d.append(s1, b); el.append(d); }
+  });
+  dash.draw('famlegend', (el) => { el.replaceChildren(); });
+  // one bar per family, split into its funds (largest first), each fund labelled by its SIF house
+  dash.draw('famchart', (el) => {
+    const R = fams(); if (!R) { failNote(el, dash.data('families').status); return; }
+    const G = CATS.map((c) => ({ c, rs: R.filter((r) => r.category === c.key).sort((a, b) => (b.aum || 0) - (a.aum || 0)) })).map((g) => ({ ...g, aum: d3.sum(g.rs, (r) => r.aum || 0) }));
+    const RH = 30;
+    const { svg, tip, W } = chartFrame(el, RH * G.length + 28);
+    svg.attr('aria-label', 'AUM by family, split by fund');
+    const meas = svg.append('g'); const lw = d3.max(G, (g) => meas.append('text').text(g.c.key).node().getComputedTextLength()) + 14; meas.remove();
+    const m = { t: 4, r: 210, b: 22, l: lw };
+    const x = d3.scaleLinear().domain([0, d3.max(G, (g) => g.aum) || 1]).nice().range([m.l, W - m.r]);
+    svg.append('g').attr('class', 'grid').attr('transform', `translate(0,${m.t + RH * G.length})`).call(d3.axisBottom(x).ticks(6).tickSize(-(RH * G.length)).tickFormat(''));
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${m.t + RH * G.length + 2})`).call(d3.axisBottom(x).ticks(6).tickFormat((d) => '₹' + d3.format(',')(d)));
+    G.forEach((g, i) => {
+      const yy = m.t + i * RH; let acc = 0;
+      svg.append('text').attr('x', m.l - 8).attr('y', yy + 11).attr('dy', '0.32em').attr('text-anchor', 'end').text(g.c.key).style('fill', 'var(--color-fg)').style('font-weight', S.cat === g.c.key ? 700 : 500);
+      g.rs.forEach((r, j) => {
+        if (!(r.aum > 0)) return;
+        const x0 = x(acc), x1 = x(acc + r.aum);
+        svg.append('rect').attr('x', x0).attr('y', yy + 2).attr('height', RH - 9).attr('width', Math.max(1, x1 - x0 - 1)).style('fill', g.c.c).style('opacity', j % 2 ? 0.62 : 1)
+          .on('pointerenter pointermove', (ev) => {
+            tip.attr('hidden', null).html('');
+            tip.append('div').text(r.strategy).style('font-weight', 600);
+            const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text('SIF house'); a1.append('span').text(r.family + ' (' + r.amc + ')');
+            const a2 = tip.append('div').attr('class', 'row'); a2.append('span').text('AUM, 30 Sep'); a2.append('span').text(fcr(r.aum));
+            const a3 = tip.append('div').attr('class', 'row'); a3.append('span').text('Share of family'); a3.append('span').text(f0(r.aum / g.aum * 100) + '%');
+            const [px] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', yy + RH + 'px');
+          }).on('pointerleave', () => tip.attr('hidden', ''));
+        if (x1 - x0 > 44) svg.append('text').attr('x', (x0 + x1) / 2).attr('y', yy + 11).attr('dy', '0.32em').attr('text-anchor', 'middle').text(r.family).style('fill', '#fff').style('font-size', '10.5px').style('pointer-events', 'none');
+        acc += r.aum;
+      });
+      const pending = g.rs.filter((r) => !(r.aum > 0)).length;
+      svg.append('text').attr('x', x(acc) + 6).attr('y', yy + 11).attr('dy', '0.32em')
+        .text(g.rs.length ? '₹' + f0(g.aum) + ' cr · ' + g.rs.length + (g.rs.length > 1 ? ' funds' : ' fund') + (pending ? ', ' + pending + ' new' : '') : 'no fund launched yet').style('fill', 'var(--color-fg)');
+    });
+  });
+  dash.draw('famcats', (el) => {
+    const R = fams(); if (!R) { el.textContent = '—'; return; }
+    el.replaceChildren();
+    for (const c of CATS) {
+      const rs = R.filter((r) => r.category === c.key);
+      const card = document.createElement('div'); card.className = 'sif-cat'; card.style.setProperty('--c', c.c);
+      const h = document.createElement('h3'); h.append(document.createTextNode(c.key)); const hs = document.createElement('span'); hs.textContent = rs.length ? rs.length + ' funds · ' + fcr(d3.sum(rs, (r) => r.aum || 0)) : 'none yet'; h.append(hs);
+      const benches = d3.rollups(rs.filter((r) => r.benchmark), (v) => v.length, (r) => r.benchmark.toUpperCase().replace(/TOTAL RETURN INDEX \(TRI\)/, 'TRI').replace(/\(TRI\)/, 'TRI').replace(/\s*-\s*/g, ' ').replace(/\s+/g, ' ').replace(/ TRI TRI/, ' TRI').trim())
+        .sort((a, b) => b[1] - a[1]).map(([b, n]) => b.replace(/NIFTY/g, 'Nifty').replace(/HYBRID COMPOSITE DEBT/g, 'Hybrid Composite Debt').replace(/INDEX/g, 'Index') + (n > 1 ? ' (' + n + ')' : ''));
+      const dl = document.createElement('dl');
+      for (const [k, v] of [['What it is', c.what], ['SEBI rule', c.rule], ['Liquidity', c.liq], ['Benchmarks filed', benches.join('; ') || '–']]) {
+        const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; dl.append(dt, dd);
+      }
+      card.append(h, dl); el.append(card);
+    }
+  });
+  dash.draw('famlist', (el) => {
+    const R = fams(); if (!R) { el.textContent = '—'; return; }
+    el.replaceChildren();
+    for (const c of CATS) {
+      const rs = R.filter((r) => r.category === c.key).sort((a, b) => (b.aum || 0) - (a.aum || 0));
+      if (!rs.length) continue;
+      const det = document.createElement('details'); det.className = 'sif-fam'; if (S.cat === c.key) det.open = true;
+      const sm = document.createElement('summary');
+      const n = document.createElement('span'); const bb = document.createElement('b'); bb.textContent = c.key; bb.style.color = c.c; n.append(bb);
+      const ch = document.createElement('span'); ch.className = 'chips';
+      for (const r of rs) { const t = document.createElement('span'); t.style.background = c.c; t.textContent = r.family; ch.append(t); }
+      const cnt = document.createElement('span'); cnt.className = 'n'; cnt.textContent = rs.length + (rs.length > 1 ? ' funds' : ' fund');
+      const au = document.createElement('span'); au.className = 'n'; au.textContent = fcr(d3.sum(rs, (r) => r.aum || 0));
+      sm.append(n, ch, cnt, au); det.append(sm);
+      const box = document.createElement('div'); box.className = 'sif-strat';
+      for (const r of rs) {
+        const a = document.createElement('article'); a.style.setProperty('--c', c.c);
+        const h = document.createElement('h4'); h.textContent = r.strategy + ' · ' + r.family + ' (' + r.amc + ')'; a.append(h);
+        const facts = document.createElement('div'); facts.className = 'facts';
+        const ter = Number.isFinite(r.ter) ? (r.ter > 5 ? f2(r.ter) + '% as filed (looks wrong)' : f2(r.ter) + '%' + (r.ter_source === 'Groww' ? ' (Groww)' : '')) : '–';
+        for (const [k, v] of [['Type', r.type ? r.type.toLowerCase() : 'n/a'], ['NFO opened', r.launch ? fmtDate(parseDate(r.launch)) : '–'], ['AUM 30 Sep', Number.isFinite(r.aum) ? fcr(r.aum) : 'not yet disclosed'],
+          ['Benchmark', r.benchmark || 'not on AMFI'], ['Expense, direct', ter], ['Risk level (1-5)', Number.isFinite(r.risk) ? String(r.risk) : '–'], ['Exit load', r.exit_load || '–']]) {
+          const s1 = document.createElement('span'); s1.append(document.createTextNode(k + ': ')); const b = document.createElement('b'); b.textContent = v; s1.append(b); facts.append(s1);
+        }
+        a.append(facts);
+        if (r.objective) { const p2 = document.createElement('p'); p2.textContent = r.objective.replace(/There is no assurance.*$/i, '').trim(); a.append(p2); }
+        if (r.allocation) { const p2 = document.createElement('p'); p2.className = 'muted'; p2.textContent = 'Stated allocation: ' + r.allocation.replace(/\s+/g, ' '); a.append(p2); }
+        if (r.ssd) { const l = document.createElement('a'); l.href = r.ssd; l.target = '_blank'; l.rel = 'noopener'; l.textContent = 'AMFI summary document'; l.style.fontSize = '12px'; a.append(l); }
+        box.append(a);
+      }
+      det.append(box); el.append(det);
     }
   });
 })();
