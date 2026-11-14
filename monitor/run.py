@@ -18,6 +18,8 @@ import fetch_portfolios  # noqa: E402
 import fetch_schemes  # noqa: E402
 import holdings  # noqa: E402
 import llm_assist  # noqa: E402
+import prices  # noqa: E402
+import attribution  # noqa: E402
 import importlib  # noqa: E402
 
 if __name__ == "__main__":
@@ -28,6 +30,8 @@ if __name__ == "__main__":
     fetch_schemes.main()  # AUM of every SIF strategy (Groww) and official facts (AMFI summary documents, weekly)
     print("3/5 analytics");     analytics.main()
     print("4/5 holdings");      holdings.main()
+    prices.main()                                     # stock prices and first trading dates (IPO / new listing)
+    importlib.reload(holdings); holdings.main()       # re-run with listing dates
     # optional LLM upkeep (needs ANTHROPIC_API_KEY): settle unmatched stock names, fetch AMFI industry totals
     known = {}
     for d_, lab, v in build.INDUSTRY:
@@ -35,4 +39,5 @@ if __name__ == "__main__":
     got = llm_assist.main(known)
     if got["names"]:
         importlib.reload(holdings); holdings.main()   # re-band the newly matched stocks
+    attribution.main()                                # what drove each fund's return since its last disclosure
     print("5/5 build");         build.main()

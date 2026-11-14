@@ -1,0 +1,7 @@
+{
+ "_note": "Hand checks of name -> Yahoo symbol, each with its reason. Applied before AMFI and search matches.",
+ "Tata Motors Pass Vehicles Ltd": {
+  "symbol": "TMPV.NS",
+  "reason": "The former Tata Motors Ltd, renamed Tata Motors Passenger Vehicles after demerging its commercial-vehicle arm (Oct 2025); TMCV is the newly listed CV company, not this holding."
+ }
+}

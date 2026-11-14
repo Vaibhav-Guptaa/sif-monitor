@@ -142,7 +142,7 @@
     }
   }
   function redraw(...names) { for (const n of names) dash.draw(n); }
-  const ALL = ['chips', 'score', 'ts', 'scatter', 'scnote', 'cons', 'constitle', 'constable', 'fundsel', 'ddtiles', 'hist', 'histnote', 'periodsel', 'trades', 'hold', 'holdnote', 'aum', 'aumtitle', 'aumnote'];
+  const ALL = ['chips', 'score', 'ts', 'scatter', 'scnote', 'cons', 'constitle', 'constable', 'fundsel', 'ddtiles', 'hist', 'histnote', 'periodsel', 'trades', 'hold', 'holdnote', 'aum', 'aumtitle', 'aumnote', 'attr'];
 
   function winStart(F, lastDate) {
     const days = { '1m': 30, '3m': 91, '6m': 182, '1y': 365 }[S.win];
@@ -607,6 +607,7 @@
     ['prot', 'Protective put', 'Holds the share and buys a put on it. Pays premium to cap the loss.', '#14b8a6', 'eq'],
     ['pheld', 'Share + put written', 'Holds the share and also sells a put on it: more exposure to a fall.', '#be185d', 'eq'],
     ['ow', 'Share + options written, type not disclosed', 'Holds the share and has sold options on it; the source (Groww\'s copy) does not say calls or puts.', '#fdba74', 'eq'],
+    ['ipo', 'IPO / new listing', 'Shares first traded in the 12 months before the portfolio date (mostly IPOs, plus demerger listings), not held against a future. Usually unhedgeable: new listings have no futures yet.', '#1e293b', 'eq'],
     ['open', 'Plain long stock', 'Owns the share with nothing against it: the full gain and the full loss. This is what drives beta.', '#dc2626', 'eq'],
     ['optb', 'Options bought, premium', 'Premium paid for options, mostly puts (Nifty or stock). Can be lost in full.', '#0891b2', 'eq'],
     ['reit', 'REITs and InvITs', 'Listed trusts that own offices, roads or power lines and pay out rent or tolls.', '#a855f7', 'fi'],
@@ -624,7 +625,7 @@
     if (r.s_plain !== undefined && r.s_plain !== '' && r.source !== 'groww_page') {
       const prem = n_('s_opt_premium');
       return { arb: n_('s_arb'), cc: n_('s_cc'), cc_put: n_('s_cc_put'), collar: n_('s_collar'), prot: n_('s_prot_put'), pheld: n_('s_put_on_held'),
-        ow: n_('s_opt_untyped'), open: n_('s_plain'), optb: Math.max(prem, 0), reit: n_('f_reit'), units: n_('f_units'), gsec: n_('f_gsec'),
+        ow: n_('s_opt_untyped'), ipo: n_('s_ipo'), open: n_('s_plain'), optb: Math.max(prem, 0), reit: n_('f_reit'), units: n_('f_units'), gsec: n_('f_gsec'),
         corp: n_('f_corp'), mm: n_('f_mm'), cash: n_('f_cash') + Math.min(prem, 0), resid: 0 };
     }
     const eq = n_('equity_long'), arb = Math.min(n_('hedged_same_stock'), eq), opt = n_('options_premium');
@@ -709,7 +710,7 @@
         const x0 = x(acc), x1 = x(Math.min(100.5, acc + w));
         svg.append('rect').attr('x', x0).attr('y', yy + 1).attr('height', 20).attr('width', Math.max(0.5, x1 - x0 - 0.6)).style('fill', SEGC[k])
           .on('pointerenter', show).on('pointermove', show).on('pointerleave', () => tip.attr('hidden', ''));
-        if (x1 - x0 > 26) svg.append('text').attr('x', (x0 + x1) / 2).attr('y', yy + 11).attr('dy', '0.32em').attr('text-anchor', 'middle').text(f0(w)).style('fill', ['open', 'cc', 'cc_put', 'corp', 'gsec', 'optb', 'arb', 'pheld', 'reit'].includes(k) ? '#ffffff' : '#111827').style('font-size', '10.5px').style('pointer-events', 'none');
+        if (x1 - x0 > 26) svg.append('text').attr('x', (x0 + x1) / 2).attr('y', yy + 11).attr('dy', '0.32em').attr('text-anchor', 'middle').text(f0(w)).style('fill', ['open', 'cc', 'cc_put', 'corp', 'gsec', 'optb', 'arb', 'pheld', 'reit', 'ipo'].includes(k) ? '#ffffff' : '#111827').style('font-size', '10.5px').style('pointer-events', 'none');
         acc += w;
       }
       const ne = Math.max(-5, Math.min(100, o.net));
@@ -739,6 +740,71 @@
         tr.append(td);
       });
       tb.append(tr);
+    }
+  });
+
+
+  // ---------- what drove recent returns ----------
+  const ATTR = [
+    ['carry', 'Carry: debt, cash, arbitrage (est. 6.5% a year)', '#86efac'],
+    ['top', 'Largest single stock', '#f97316'],
+    ['ipo', 'IPO / new listings', '#1e293b'],
+    ['other', 'All other stocks', '#dc2626'],
+    ['fut', 'Futures and shorts', '#60a5fa'],
+    ['rem', 'Options and trading since the disclosure', '#a8a29e'],
+  ];
+  const FLAG_C = { 'Single-stock driven': '#c2410c', 'IPO-driven': '#1e293b', 'Event-driven': '#7c3aed', 'Market-driven': '#2563eb', 'Options or trading dominant': '#57534e' };
+  dash.draw('attrkey', (el) => {
+    el.replaceChildren();
+    for (const [, n, c] of ATTR) { const s1 = document.createElement('span'); const i = document.createElement('i'); i.style.background = c; s1.append(i, document.createTextNode(n)); el.append(s1); }
+    const s2 = document.createElement('span'); s2.innerHTML = '<i style="background:#111827;width:3px"></i>Actual NAV return'; el.append(s2);
+  });
+  dash.draw('attr', (el) => {
+    const A = rows('attrib'), T = rows('attrib_top'); el.replaceChildren();
+    if (!A) { failNote(el, dash.data('attrib').status); return; }
+    const list = A.filter((r) => S.cat === 'all' || r.category === S.cat).map((r) => {
+      const n_ = (k) => num(r[k]) || 0;
+      return { r, v: { carry: n_('carry'), top: n_('top_c'), ipo: n_('ipo_c'), other: n_('other'), fut: n_('futures'), rem: n_('remainder') }, nav: n_('r_nav') };
+    }).sort((a, b) => b.nav - a.nav);
+    if (!list.length) { const p = document.createElement('p'); p.className = 'note'; p.textContent = 'No disclosed portfolio in this family yet.'; el.append(p); return; }
+    let lo = 0, hi = 0;
+    for (const x of list) { const pos = d3.sum(Object.values(x.v).filter((v) => v > 0)), neg = d3.sum(Object.values(x.v).filter((v) => v < 0)); lo = Math.min(lo, neg, x.nav); hi = Math.max(hi, pos, x.nav); }
+    const W = Math.max(280, el.clientWidth || 800);
+    const x = d3.scaleLinear().domain([lo * 1.05, hi * 1.05]).range([8, W - 8]);
+    for (const { r, v, nav } of list) {
+      const row = document.createElement('div'); row.className = 'sif-attr';
+      const head = document.createElement('div'); head.className = 'sif-attr-h';
+      const nm = document.createElement('b'); nm.textContent = withHouse(r.brand, r.code, r.category) + (aumTxt(r.code) ? ' · ' + aumTxt(r.code) : ''); head.append(nm);
+      const ret = document.createElement('span'); ret.className = 'num'; ret.textContent = sg1(nav) + '% from ' + fmtDate(parseDate(r.asof)) + ' to ' + fmtDate(parseDate(r.to)) + (r.r_nifty !== '' ? ' (Nifty ' + sg1(num(r.r_nifty)) + '%)' : ''); head.append(ret);
+      for (const f of (r.flags || '').split(';').map((s) => s.trim()).filter(Boolean)) {
+        const pill = document.createElement('span'); pill.className = 'pill flag'; pill.textContent = f; pill.style.borderColor = pill.style.color = FLAG_C[f.replace(/ \(.*\)$/, '')] || '#57534e'; head.append(pill);
+      }
+      row.append(head);
+      const svg = d3.select(row).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} 30`).attr('role', 'img').attr('aria-label', 'Return contributions for ' + r.brand);
+      svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', 0).attr('y2', 30).style('stroke', 'var(--cds-chart-reference)');
+      let pos = 0, neg = 0;
+      for (const [k, n, c] of ATTR) {
+        const val = v[k]; if (!val || Math.abs(val) < 0.005) continue;
+        const a0 = val > 0 ? pos : neg + val, a1 = val > 0 ? pos + val : neg;
+        svg.append('rect').attr('x', x(a0)).attr('y', 6).attr('height', 16).attr('width', Math.max(1, x(a1) - x(a0) - 0.5)).style('fill', c).append('title').text(n + ': ' + sg1(val) + ' pts' + (k === 'top' ? ' (' + r.top_name + ')' : ''));
+        if (val > 0) pos += val; else neg += val;
+      }
+      svg.append('rect').attr('x', x(nav) - 1.5).attr('y', 1).attr('width', 3).attr('height', 26).style('fill', '#111827').append('title').text('Actual NAV return ' + sg1(nav) + '%');
+      const det = document.createElement('p'); det.className = 'note';
+      const parts = [];
+      if (r.top_name) parts.push('Largest: ' + r.top_name + (String(r.top_ipo) === 'True' ? ' (IPO)' : '') + ' ' + sg1(num(r.top_c)) + ' pts (' + f1(num(r.top_w)) + '% of NAV, stock ' + sg1(num(r.top_ret)) + '%)');
+      parts.push('IPO / new listings ' + sg1(num(r.ipo_total)) + ' pts');
+      parts.push('options and trading ' + sg1(num(r.remainder)) + ' pts');
+      if (num(r.unpriced_w) > 0.5) parts.push(f1(num(r.unpriced_w)) + '% of NAV unpriced');
+      if (r.market !== '') parts.push('beta × Nifty would give ' + sg1(num(r.market)) + '%');
+      let ev = []; try { ev = JSON.parse(r.events || '[]'); } catch (e) {}
+      det.textContent = parts.join(' · ') + '.' + (ev.length ? ' Event days, last 3 months (3M return ' + sg1(num(r.r_91)) + '%): ' + ev.map((e) => fmtDate(parseDate(e.date)) + ' ' + sg1(e.ret) + '%' + (e.listing ? ' (listing day of ' + e.listing + ')' : '')).join(', ') + '.' : '');
+      row.append(det);
+      if (T) {
+        const tops = T.filter((t) => t.fund === r.fund).slice(0, 5);
+        if (tops.length) { const p = document.createElement('p'); p.className = 'note muted'; p.textContent = 'Top contributors: ' + tops.map((t) => t.name + (String(t.ipo) === 'True' ? ' (IPO)' : '') + ' ' + sg1(num(t.contrib)) ).join(', ') + ' pts.'; row.append(p); }
+      }
+      el.append(row);
     }
   });
 
@@ -837,6 +903,11 @@
       const kind = KIND_NAME[r.kind] + (r.opt ? (r.opt === 'C' ? ' (call)' : ' (put)') : '');
       const cells = [r.name, kind, r.band || '', r.industry || '', f2(+r.pct), r.qty ? fq(+r.qty) : '–', r.mv_lakh ? d3.format(',.2f')(+r.mv_lakh / 100) : '–'];
       cells.forEach((t, i) => { const td = document.createElement('td'); td.textContent = t; td.className = i >= 4 ? 'n' : (i ? 'l' : ''); if (i === 4 && +r.pct < 0) td.classList.add('bad'); tr.append(td); });
+      if (String(r.ipo) === 'True' || r.ipo === true) {   // flag IPO / new listings next to the name
+        const pill = document.createElement('span'); pill.className = 'pill ipo'; pill.textContent = 'IPO · listed ' + fmtDate(parseDate(r.listed));
+        pill.title = 'First traded ' + r.listed + ', within 12 months of the portfolio date (Yahoo Finance first trading day)';
+        tr.children[0].append(' ', pill);
+      }
       tb.append(tr);
     }
   });

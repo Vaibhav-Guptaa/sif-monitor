@@ -110,7 +110,9 @@ def load_caps():
             continue
         rank, name, isin, cat, mcap = int(row[0]), row[1], row[2], row[10], row[9]
         band = {"Large Cap": "Large", "Mid Cap": "Mid", "Small Cap": "Small"}.get(cat, "Small")
-        rec = dict(rank=rank, name=name, band=band, mcap_cr=mcap)
+        nse = row[5] if isinstance(row[5], str) and row[5].strip() not in ("", "-") else ""
+        bse = row[3] if isinstance(row[3], str) and row[3].strip() not in ("", "-") else ""
+        rec = dict(rank=rank, name=name, band=band, mcap_cr=mcap, nse=nse.strip(), bse=bse.strip())
         by_isin[isin] = rec
         by_name.setdefault(norm(name), rec)
     return by_isin, by_name
@@ -128,6 +130,32 @@ def _llm_aliases() -> None:
 
 _llm_aliases()
 CAP_ISIN, CAP_NAME = load_caps()
+
+
+def _listing() -> tuple[dict, dict]:
+    """name -> Yahoo symbol and symbol -> first trading date, written by prices.py (empty before its first run)."""
+    import json
+    ref = ROOT / "data" / "monitor" / "ref"
+    ns = json.loads((ref / "name_symbol.json").read_text()) if (ref / "name_symbol.json").exists() else {}
+    ld = json.loads((ref / "listing_dates.json").read_text()) if (ref / "listing_dates.json").exists() else {}
+    return ns, ld
+
+
+NAME_SYM, LISTED = _listing()
+
+
+def listed_on(name: str) -> str:
+    """First trading day of a stock (ISO date), 'before 2025', or '' if unknown."""
+    return LISTED.get(NAME_SYM.get(name, ""), "")
+
+
+def is_ipo(name: str, asof: str) -> bool:
+    """IPO-related: first traded within the 12 months before the portfolio date (anchor lock-in and listing gains)."""
+    d = listed_on(name)
+    if not d or not d[:4].isdigit() or not asof:
+        return False
+    from datetime import date, timedelta
+    return d >= (date.fromisoformat(asof) - timedelta(days=365)).isoformat()
 
 
 def cap_by_name(name: str):
@@ -464,14 +492,21 @@ def summarise(p: dict) -> tuple[dict, list[dict]]:
             side = "w" if l["pct"] < 0 else "b"
             pos[ukey(l["under"])][(t.lower() if t != "u" else "u") + side] += l["pct"]
     eqw = defaultdict(float)
+    eqname = {}
     for l in eq:
         eqw[ukey(l["name"])] += l["pct"]
+        eqname.setdefault(ukey(l["name"]), l["name"])
     st = defaultdict(float)
     for k, wk in eqw.items():
         q = pos.get(k, {})
         arb = max(min(wk, -q.get("fs", 0.0)), 0.0)
         st["arb"] += arb
         r = wk - arb
+        if is_ipo(eqname.get(k, ""), p.get("asof") or ""):
+            st["ipo"] += r             # IPO / new listing, the part not held against a future
+            st["n_ipo"] += 1
+            st["ipo_total"] += wk
+            continue
         cw, pw, cb, pb, uw = q.get("cw", 0) < 0, q.get("pw", 0) < 0, q.get("cb", 0) > 0, q.get("pb", 0) > 0, q.get("uw", 0) < 0
         if cw and pw:
             st["cc_put"] += r          # stock + call written + put written (covered strangle)
@@ -528,6 +563,7 @@ def summarise(p: dict) -> tuple[dict, list[dict]]:
         # trading-strategy decomposition (% of NAV; the s_ and f_ fields add to 100)
         s_arb=st["arb"], s_cc=st["cc"], s_cc_put=st["cc_put"], s_collar=st["collar"], s_prot_put=st["prot_put"],
         s_put_on_held=st["put_on_held"], s_opt_untyped=st["opt_untyped"], s_plain=st["plain"],
+        s_ipo=st["ipo"], n_ipo=int(st["n_ipo"]), ipo_total=st["ipo_total"],
         s_opt_premium=agg["OPT"] + agg["IDXOPT"],
         f_gsec=agg["GSEC"], f_corp=agg["DEBT"], f_mm=agg["MM"], f_reit=agg["REIT"], f_units=agg["MF"],
         f_cash=((100 - stocks_etc - agg["DEBT"] - agg["GSEC"] - agg["MM"] - agg["IRS"]) if p["source"] == "groww" else agg["CASH"]) + agg["IRS"],
@@ -615,7 +651,9 @@ def main() -> None:
             for l in latest["lines"]:
                 all_lines.append(dict(fund=fund, brand=brand, asof=latest["asof"], source=latest["source"], name=l["name"],
                                       isin=l["isin"], industry=l["ind"], kind=l["kind"], opt=l["opt"], underlying=l["under"],
-                                      band=l.get("band", ""), qty=l["qty"], mv_lakh=l["mv_lakh"], pct=round(l["pct"], 4)))
+                                      band=l.get("band", ""), qty=l["qty"], mv_lakh=l["mv_lakh"], pct=round(l["pct"], 4),
+                                      listed=listed_on(l["name"]) if l["kind"] == "EQ" else "",
+                                      ipo=is_ipo(l["name"], latest["asof"]) if l["kind"] == "EQ" else False))
         off = [p for p in ports if p["source"] == "official"]
         for a, b in zip(off, off[1:]):
             for t in trades(a, b):

@@ -78,6 +78,10 @@
 .sif-strat .facts b { color: var(--color-fg); font-family: var(--sif-num); font-weight: 500; }
 .sif-strat p { color: var(--color-fg); max-width: 110ch; }
 @media (max-width: 640px) { .sif-fam summary { grid-template-columns: 1fr 70px 90px; } .sif-fam summary .chips { display: none; } }
+.sif-attr { border-bottom: 1px solid var(--color-border-line); padding: 10px 0; display: grid; gap: 4px; }
+.sif-attr-h { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; font-size: 13px; }
+.sif .pill.flag { font-weight: 600; background: var(--color-panel); }
+.sif .pill.ipo { border-color: #1e293b; color: #1e293b; font-size: 10.5px; }
 .sif-tablewrap { overflow-x: auto; min-width: 0; }
 .sif table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); }
 .sif th { text-align: right; font-weight: 600; color: var(--color-fg-muted); padding: 6px 8px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; vertical-align: bottom; }
@@ -236,6 +240,13 @@
       </table>
     </div>
     <p class="note">Equity exposure before options = stocks + stock futures + index futures (shorts negative). Options appear in disclosures at premium value, not delta, so the option book's real exposure is not in that figure. The exposure the NAV shows (60-day beta × 100) is what the daily NAV says the fund actually carried. A wide gap between the two points to option hedges or timing. Effective number of stocks = 1 / sum of squared weights in the stock book: ten equal holdings give 10. L / M / S use AMFI's Jan–Jun 2026 market-cap list: top 100 large, 101–250 mid, rest small. Shorts count in the band of the stock shorted.</p>
+  </section>
+
+  <section class="sif-panel" id="attrib">
+    <header><h2>What drove recent returns</h2><span class="note">Since each fund's last disclosed portfolio, percentage points of NAV</span></header>
+    <div class="sif-legend" data-draw="attrkey"></div>
+    <div data-draw="attr" data-source="attrib attrib_top families"></div>
+    <p class="note">Each bar splits the fund's actual NAV return (black marker) since its last disclosed portfolio into: carry on debt, cash and arbitrage (estimated at 6.5% a year); the single stock that contributed most; IPO and new-listing stocks; all other stocks (each unhedged weight × the stock's price move); futures and shorts; and the rest, labelled options and trading: calls capping gains, put income, trades after the disclosure, IPO allotments received since, fees. Flags: <b>single-stock driven</b> = one stock gave 40% or more of the stock contribution; <b>IPO-driven</b> = new listings gave 30% or more of the return; <b>event-driven</b> = days when the fund rose 4× its usual daily move gave a quarter or more of its 3-month return, or one day added 2 points or more (named when it was the listing day of a stock the fund holds); <b>market-driven</b> = 60-day beta × Nifty explains 60% or more; <b>options or trading dominant</b> = the rest is half the return or more. Stock prices and first trading days: Yahoo Finance.</p>
   </section>
 
   <div class="sif-grid2">
