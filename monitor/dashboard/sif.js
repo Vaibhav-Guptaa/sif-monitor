@@ -101,9 +101,13 @@
   function fams() {
     const d = rows('families'); if (!d) return null;
     if (cache.has(d)) return cache.get(d);
-    const out = d.map((r) => ({ ...r, aum: num(r.aum_sep_cr), ter: num(r.ter_direct), risk: num(r.risk_level) }));
+    // aum: the latest figure Groww reports for the fund (read date in aum_read; Groww states no month-end);
+    // aumSep: net assets in the fund's 30 Sep 2026 portfolio disclosure, the last confirmed, dated figure
+    const out = d.map((r) => { const l = num(r.aum_latest_cr), sp = num(r.aum_sep_cr);
+      return { ...r, aum: Number.isFinite(l) && l > 0 ? l : sp, aumSep: sp, moved: Number.isFinite(l) && Number.isFinite(sp) && Math.abs(l - sp) > 0.5, ter: num(r.ter_direct), risk: num(r.risk_level) }; });
     cache.set(d, out); return out;
   }
+  const readDate = () => { const R = fams(); const d = R && d3.max(R, (r) => r.aum_read); return d ? fmtDate(parseDate(d)) : ''; };
   const fcr = (v) => (Number.isFinite(v) ? '₹' + f0(v) + ' cr' : '–');
   // Fund names always read 'Platform (fund house)', plus that fund's AUM where it helps identify it
   const AMC_SHORT = { 'Aditya Birla Sun Life': 'Aditya Birla', 'ICICI Prudential': 'ICICI Pru', 'Franklin Templeton': 'Franklin', 'Mahindra Manulife': 'Mahindra', 'Kotak Mahindra': 'Kotak', 'Quant': 'quant', 'JioBlackRock': 'Jio BlackRock' };
@@ -292,10 +296,12 @@
         } else if (c === 'first_date') { td.className = 'n'; td.textContent = f.kind === 'SIF' ? fmtMon(parseDate(f.first_date)) : '–'; }
         else if (c === 'aum') {
           td.className = 'n';
-          let a = A.get(f.fund);
-          if (!a && f.kind === 'SIF') { const fr = (fams() || []).find((x) => x.code === f.id); if (fr && Number.isFinite(fr.aum)) a = { aum_cr: fr.aum, fund: f.fund, date: '2026-09-30', quality: 'Disclosed (via Groww)', source: 'Groww copy of the 30 Sep portfolio' }; }
+          let a = null;
+          const fr = f.kind === 'SIF' ? (fams() || []).find((x) => x.code === f.id) : null;
+          if (fr && Number.isFinite(fr.aum) && fr.aum > 0) a = { aum_cr: fr.aum, fund: f.fund, date: fr.aum_read || '', quality: 'Disclosed (via Groww)', source: 'Latest figure on Groww, read ' + (fr.aum_read || '') + (fr.moved ? '; newer than the 30 Sep portfolio (₹' + f0(fr.aumSep) + ' cr), month-end not stated' : '; same as the 30 Sep portfolio') };
+          if (!a) a = A.get(f.fund);
           if (a) {
-            const s = document.createElement('span'); s.textContent = f0(+a.aum_cr) + ' ';
+            const s = document.createElement('span'); s.textContent = f0(+a.aum_cr) + (fr && fr.moved ? '* ' : ' ');
             s.setAttribute('data-source', 'aum'); s.setAttribute('data-field', 'aum_cr'); s.setAttribute('data-where', 'fund=' + a.fund + '&date=' + a.date);
             const p = document.createElement('span'); p.className = 'pill ' + QCLS(a.quality); p.textContent = { official: 'off', disclosed: 'disc', reported: 'rep' }[QCLS(a.quality)];
             p.title = a.source + ', ' + a.date;
@@ -562,7 +568,7 @@
   });
 
   // ---------- AUM (30 Sep 2026 disclosures, every fund in the selected family) ----------
-  dash.draw('aumtitle', (el) => { el.textContent = 'Assets under management: ' + famLabel(); });
+  dash.draw('aumtitle', (el) => { el.textContent = 'Assets under management, latest: ' + famLabel(); });
   dash.draw('aum', (el) => {
     const R = fams(); if (!R) { failNote(el, dash.data('families').status); return; }
     const pts = R.filter((r) => (S.cat === 'all' || r.category === S.cat) && Number.isFinite(r.aum) && r.aum > 0)
@@ -577,17 +583,14 @@
       const yy = m.t + i * 20;
       svg.append('text').attr('x', m.l - 8).attr('y', yy + 8).attr('dy', '0.32em').attr('text-anchor', 'end').text(p.lab);
       svg.append('rect').attr('x', m.l).attr('y', yy + 2).attr('height', 13).attr('width', Math.max(1, x(p.v) - m.l)).attr('rx', 2).style('fill', CATC[p.r.category] || col(0));
-      svg.append('text').attr('x', x(p.v) + 6).attr('y', yy + 8).attr('dy', '0.32em').text('₹' + f0(p.v));
+      svg.append('text').attr('x', x(p.v) + 6).attr('y', yy + 8).attr('dy', '0.32em').text('₹' + f0(p.v) + (p.r.moved ? ' *' : ''));
     });
   });
   dash.draw('aumnote', (el) => {
-    const R = fams(), d = rows('aum'); if (!R || !d) { el.textContent = '—'; return; }
-    const ind = d.filter((r) => r.kind === 'Industry' && r.date === '2026-09-30');
+    const R = fams(); if (!R) { el.textContent = '—'; return; }
     const sel = R.filter((r) => S.cat === 'all' || r.category === S.cat);
-    const tot = d3.sum(sel, (r) => r.aum || 0);
-    const amfi = ind.find((r) => r.brand === (S.cat === 'all' ? 'All SIFs' : S.cat));
-    el.textContent = '₹ crore, month-end net assets in each fund\'s 30 Sep 2026 portfolio disclosure (AMC file or Groww\'s copy). Total ₹' + f0(tot) + ' cr across ' + sel.filter((r) => r.aum > 0).length + ' funds'
-      + (amfi ? ', ' + f0(tot / +amfi.aum_cr * 100) + '% of AMFI\'s ₹' + f0(+amfi.aum_cr) + ' cr for ' + (S.cat === 'all' ? 'all SIFs' : S.cat.toLowerCase()) : '') + '. Funds launched after September have no disclosure yet.';
+    const moved = sel.filter((r) => r.moved).length;
+    el.textContent = '₹ crore. Latest figure Groww reports for each fund, read ' + readDate() + '; ' + moved + ' of these have moved past the fund\'s 30 Sep 2026 portfolio (marked *), and Groww does not state the month-end. Total ₹' + f0(d3.sum(sel, (r) => r.aum || 0)) + ' cr across ' + sel.filter((r) => r.aum > 0).length + ' funds (₹' + f0(d3.sum(sel, (r) => r.aumSep || 0)) + ' cr in their 30 Sep portfolios). Funds launched after September have no figure yet.';
   });
 
   // ---------- trading-strategy breakdown: every rupee of NAV in one bucket; the buckets add to 100 ----------
@@ -676,7 +679,7 @@
       const yy = m.t + i * RH; let acc = 0;
       if (r.total) svg.append('rect').attr('x', 0).attr('y', yy - 6).attr('width', W).attr('height', RH - 2).style('fill', 'var(--cds-chart-grid)');
       svg.append('text').attr('x', m.l - 8).attr('y', yy + 10).attr('dy', '0.32em').attr('text-anchor', 'end').text(r.total ? r.brand : allocLabel(r)).style('fill', 'var(--color-fg)').style('font-weight', 600);
-      svg.append('text').attr('x', m.l - 8).attr('y', yy + 25).attr('text-anchor', 'end').text(r.total ? 'AUM-weighted · ₹' + f0(wsum) + ' cr' : (r.aum_cr ? '₹' + f0(+r.aum_cr) + ' cr' : aumTxt(r.code))).style('font-size', '10px');
+      svg.append('text').attr('x', m.l - 8).attr('y', yy + 25).attr('text-anchor', 'end').text(r.total ? 'AUM-weighted · ₹' + f0(wsum) + ' cr' : (r.aum_cr ? fmtDate(parseDate(r.asof)) + ': ₹' + f0(+r.aum_cr) + ' cr' : aumTxt(r.code))).style('font-size', '10px');
       const b = r.total ? NaN : beta.get(r.fund);
       const show = (ev) => {
         tip.attr('hidden', null).html('');
@@ -856,16 +859,14 @@
   dash.draw('famasof', (el) => {
     const R = fams(); if (!R) { el.textContent = '—'; return; }
     const f = R.find((r) => r.amfi_fetched)?.amfi_fetched;
-    el.textContent = 'AUM as of 30 Sep 2026 (latest portfolio disclosures). Fund facts from AMFI summary documents' + (f ? ', fetched ' + fmtDate(parseDate(f)) : '') + '. Rules: SEBI Master Circular, 20 Mar 2026.';
+    const moved = R.filter((r) => r.moved).length;
+    el.textContent = 'AUM: the latest figure Groww reports for each fund, read ' + readDate() + '; ' + moved + ' funds have moved past their 30 Sep 2026 portfolio, and Groww does not state the month-end. Fund facts from AMFI summary documents' + (f ? ', fetched ' + fmtDate(parseDate(f)) : '') + '. Rules: SEBI Master Circular, 20 Mar 2026.';
   });
   dash.draw('famtiles', (el) => {
     const R = fams(); if (!R) { el.textContent = '—'; return; }
-    const ind = (rows('aum') || []).filter((r) => r.kind === 'Industry' && r.date === '2026-09-30');
-    const all = num((ind.find((r) => r.brand === 'All SIFs') || {}).aum_cr);
-    const tot = d3.sum(R, (r) => r.aum || 0);
     const live = new Set(R.map((r) => r.category));
     const t = [['Families (SEBI types) with a fund', live.size + ' of ' + CATS.length], ['SIF houses', String(new Set(R.map((r) => r.family)).size)], ['Funds with a NAV', String(R.length)],
-      ['AUM, 30 Sep 2026', fcr(tot)], ['Share of AMFI industry total', Number.isFinite(all) ? f0(tot / all * 100) + '% of ₹' + f0(all) + ' cr' : '–']];
+      ['AUM, latest reported (Groww, read ' + readDate() + ')', fcr(d3.sum(R, (r) => r.aum || 0))], ['AUM in 30 Sep 2026 portfolios', fcr(d3.sum(R, (r) => r.aumSep || 0))]];
     el.replaceChildren();
     for (const [k, v] of t) { const d = document.createElement('div'); d.className = 'tile'; const s1 = document.createElement('span'); s1.textContent = k; const b = document.createElement('b'); b.textContent = v; d.append(s1, b); el.append(d); }
   });

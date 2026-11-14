@@ -97,7 +97,7 @@ def families() -> pd.DataFrame:
             type=("Interval" if "interval" in (a.get("type", "") or "").lower() else "Open-ended" if a.get("type") else ""),
             launch=a.get("launch") or s_.get("first_nav_date", ""), first_nav=s_.get("first_nav_date", ""),
             aum_sep_cr=gv("portfolio_net_assets_cr") if gv("portfolio_date") == "2026-09-30" else "",
-            aum_latest_cr=gv("aum_cr"), aum_latest_basis=gv("aum_date"), portfolio_date=gv("portfolio_date"),
+            aum_latest_cr=gv("aum_cr"), aum_latest_basis=gv("aum_date"), aum_read=gv("fetched"), portfolio_date=gv("portfolio_date"),
             benchmark=bench or gv("benchmark"), benchmark_source="AMFI summary document" if bench else ("Groww" if gv("benchmark") else ""),
             objective=re.sub(r"\s+", " ", a.get("objective", "")).strip(),
             allocation=_pick(d, "stated", "allocation") or _pick(d, "asset", "allocation"),
