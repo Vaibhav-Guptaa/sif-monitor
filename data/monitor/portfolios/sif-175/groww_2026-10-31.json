@@ -1,0 +1,70 @@
+{
+ "scheme_code": "SIF-175",
+ "scheme_name": "Invesco Summit Active Asset Allocator Long Short Fund Direct Growth",
+ "isin": "INF205K30105",
+ "aum": 204.78,
+ "nav": 10.02,
+ "nav_date": "13-Nov-2026",
+ "search_id": "summit-active-asset-allocator-long-short-fund-direct-growth",
+ "portfolio_date": "2026-10-31",
+ "fetched": "2026-11-17",
+ "source": "https://groww.in/v1/api/data/mf/web/v4/scheme/search/summit-active-asset-allocator-long-short-fund-direct-growth",
+ "holdings": [
+  {
+   "scheme_code": "SIF-175",
+   "portfolio_date": "2026-10-30T18:30:00.000Z",
+   "company_name": "Repo",
+   "nature_name": "CASH",
+   "sector_name": "Unspecified",
+   "instrument_name": "Repo",
+   "rating": null,
+   "market_value": 165.8119,
+   "corpus_per": 80.97,
+   "market_cap": null,
+   "rating_market_cap": null,
+   "stock_search_id": null
+  },
+  {
+   "scheme_code": "SIF-175",
+   "portfolio_date": "2026-10-30T18:30:00.000Z",
+   "company_name": "Invesco India Liquid Fund Direct-Growth",
+   "nature_name": "MF",
+   "sector_name": "Unspecified",
+   "instrument_name": "Mutual Fund",
+   "rating": null,
+   "market_value": 20.0035,
+   "corpus_per": 9.77,
+   "market_cap": null,
+   "rating_market_cap": null,
+   "stock_search_id": null
+  },
+  {
+   "scheme_code": "SIF-175",
+   "portfolio_date": "2026-10-30T18:30:00.000Z",
+   "company_name": "SMALL INDUSTRIES DEVELOPMENT BANK OF INDIA CD 06NOV26",
+   "nature_name": "DEBT",
+   "sector_name": "Financial",
+   "instrument_name": "Certificate of Deposit",
+   "rating": null,
+   "market_value": 17.982,
+   "corpus_per": 8.78,
+   "market_cap": null,
+   "rating_market_cap": null,
+   "stock_search_id": null
+  },
+  {
+   "scheme_code": "SIF-175",
+   "portfolio_date": "2026-10-30T18:30:00.000Z",
+   "company_name": "Net Receivables",
+   "nature_name": "CASH",
+   "sector_name": "Unspecified",
+   "instrument_name": "Net Receivables",
+   "rating": null,
+   "market_value": 0.9825,
+   "corpus_per": 0.48,
+   "market_cap": null,
+   "rating_market_cap": null,
+   "stock_search_id": null
+  }
+ ]
+}
