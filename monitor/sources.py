@@ -123,10 +123,22 @@ def mf_history(code: int, start: str = "2025-01-01", end: str | None = None) -> 
     return [(r["date"], float(r["nav"])) for r in recs]
 
 
-def nifty_price(start: str = "2025-01-01") -> list[tuple[str, float]]:
+def nifty_price(start: str = "2025-01-01", want: str | None = None) -> list[tuple[str, float]]:
+    """Nifty 50 closes from Yahoo. The benchmark calendar is built on these dates, so a missing latest close would
+    hold every benchmark at the previous day. want = the latest date AMFI has fund NAVs for: if Yahoo's series ends
+    before it, retry a few times, then warn (the next scheduled run catches up)."""
+    import time
     import yfinance as yf
-    h = yf.Ticker("^NSEI").history(start=start, auto_adjust=False)
-    return [(d.strftime("%Y-%m-%d"), round(float(c), 2)) for d, c in zip(h.index, h["Close"])]
+    out: list[tuple[str, float]] = []
+    for attempt in range(4):
+        h = yf.Ticker("^NSEI").history(start=start, auto_adjust=False)
+        out = [(d.strftime("%Y-%m-%d"), round(float(c), 2)) for d, c in zip(h.index, h["Close"])]
+        if not want or (out and out[-1][0] >= want):
+            return out
+        time.sleep(60 * (attempt + 1))
+    print(f"  WARNING: Yahoo Nifty 50 ends {out[-1][0] if out else 'empty'}, fund NAVs reach {want}; "
+          "benchmarks stay at the earlier date until the next run")
+    return out
 
 
 def is_direct_growth(r: dict) -> bool:

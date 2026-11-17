@@ -3,6 +3,7 @@ name: Refresh data and publish site
 on:
   schedule:
     - cron: "45 18 * * 1-5"   # 00:15 IST Tue-Sat: after AMFI's 11 pm upload for each trading day Mon-Fri
+    - cron: "30 3 * * 2-6"    # 09:00 IST Tue-Sat: catch-up, as GitHub may delay or drop scheduled runs and Yahoo can lag
   workflow_dispatch:           # "Run workflow" button for an on-demand refresh
   push:
     branches: [main]

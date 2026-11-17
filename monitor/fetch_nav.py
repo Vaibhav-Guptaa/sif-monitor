@@ -125,7 +125,7 @@ def main() -> None:
     for sid, (code, _label) in S.BENCH_FUNDS.items():
         bench += [(d, sid, v) for d, v in S.mf_history(code)]
         time.sleep(0.3)
-    bench += [(d, "nifty50", v) for d, v in S.nifty_price()]
+    bench += [(d, "nifty50", v) for d, v in S.nifty_price(want=max((d for d, *_ in navrows), default=None))]
     with open(RAW / "bench.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["date", "series", "value"])
