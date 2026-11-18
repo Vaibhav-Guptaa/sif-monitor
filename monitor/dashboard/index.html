@@ -119,13 +119,37 @@
 .sif-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 [data-dash-source-state=refreshing] { opacity: .5; }
 @media (max-width: 560px) { .sif-chart { min-height: 260px; } }
+/* Family summary: a separate view opened from the header link (#summary); the dashboard stays as it is */
+.sif-viewlink { display: flex; flex-wrap: wrap; gap: 10px; font-size: var(--cds-font-size-caption); }
+.sif-viewlink a { font-weight: 600; color: var(--color-accent, #2563eb); text-decoration: none; border: 1px solid var(--color-border-line); border-radius: 999px; padding: 4px 12px; background: var(--color-panel); }
+.sif-viewlink a:hover { border-color: currentColor; }
+.sif.view-summary > :not(.sif-head):not(#famsum) { display: none !important; }
+.sif:not(.view-summary) > #famsum { display: none; }
+.sif [data-draw="famsum"] table { min-width: 820px; }
+.sif [data-draw="famsum"] th { white-space: normal; max-width: 92px; line-height: 1.25; }
+.sif [data-draw="famsum"] td { vertical-align: top; }
+.sif [data-draw="famsum"] td.fam { white-space: normal; min-width: 220px; max-width: 300px; }
+.sif [data-draw="famsum"] td.fam b { display: block; font-size: 13.5px; }
+.sif [data-draw="famsum"] td.fam .rule { display: block; margin-top: 3px; color: var(--color-fg-muted); line-height: 1.4; font-size: 11.5px; }
+.sif [data-draw="famsum"] td.top { white-space: normal; text-align: left; min-width: 200px; line-height: 1.5; font-size: 11.5px; }
+.sif [data-draw="famsum"] tr.tot td { font-weight: 600; border-top: 2px solid var(--color-border-line); }
+.sif [data-draw="famsum"] .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 </style>
 
 <div class="sif" id="sif">
   <header class="sif-head" id="top">
     <div class="sif-eyebrow">Specialised Investment Funds · daily official NAVs</div>
     <h1>SIF Competitor Monitor</h1>
+    <nav class="sif-viewlink" aria-label="Views"><a href="#summary" data-view="summary">Family summary →</a></nav>
   </header>
+
+  <section class="sif-panel" id="famsum" aria-labelledby="famsum-h">
+    <header><h2 id="famsum-h">SIF families at a glance</h2><a class="sif-viewlink" href="#" data-view="dashboard" style="text-decoration:none">← Back to dashboard</a></header>
+    <p class="note" data-draw="famsumnote" data-source="families funds">—</p>
+    <div class="sif-tiles" data-draw="famsumtiles" data-source="families funds"></div>
+    <div class="sif-tablewrap" data-draw="famsum" data-source="families funds"></div>
+    <p class="note">Fund houses: distinct SIF platforms in the family (each fund house runs one platform, e.g. Altiva for Edelweiss). AUM: latest figure Groww reports for each fund (the same figure as the scoreboard). Average AUM is across funds that report one. Days live: from a fund's first official NAV to the latest NAV date. SEBI rules: Master Circular for Mutual Funds, 20 Mar 2026, chapter 21, and the SIF FAQ of 22 Sep 2026.</p>
+  </section>
 
   <section class="sif-panel" id="timeseries">
     <div class="sif-controls" id="controls" aria-label="Controls">

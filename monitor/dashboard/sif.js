@@ -111,7 +111,7 @@
   const readDate = () => { const R = fams(); const d = R && d3.max(R, (r) => r.aum_read); return d ? fmtDate(parseDate(d)) : ''; };
   const fcr = (v) => (Number.isFinite(v) ? '₹' + f0(v) + ' cr' : '–');
   // Fund names always read 'Platform (fund house)', plus that fund's AUM where it helps identify it
-  const AMC_SHORT = { 'Aditya Birla Sun Life': 'Aditya Birla', 'ICICI Prudential': 'ICICI Pru', 'Franklin Templeton': 'Franklin', 'Mahindra Manulife': 'Mahindra', 'Kotak Mahindra': 'Kotak', 'Quant': 'quant', 'JioBlackRock': 'Jio BlackRock' };
+  const AMC_SHORT = { 'Aditya Birla Sun Life': 'Aditya Birla', 'ICICI Prudential': 'ICICI Pru', 'Franklin Templeton': 'Franklin', 'Mahindra Manulife': 'Mahindra', 'Kotak Mahindra': 'Kotak', 'Quant': 'quant', 'JioBlackRock': 'Jio BlackRock', '360 ONE Asset': '360 ONE' };
   function fmeta(code) { const R = fams(); const r = R ? R.find((x) => x.code === code) : null; return r ? { amc: AMC_SHORT[r.amc] || r.amc, aum: r.aum } : {}; }
   const withHouse = (brand, code, category) => { const m_ = fmeta(code); return brand + (m_.amc ? ' (' + m_.amc + ')' : '') + (S.cat === 'all' && category ? ' ' + (CAT_SHORT[category] || '') : ''); };
   const aumTxt = (code) => { const m_ = fmeta(code); return Number.isFinite(m_.aum) && m_.aum > 0 ? '₹' + d3.format(',.0f')(m_.aum) + ' cr' : ''; };
@@ -1058,4 +1058,72 @@
       det.append(box); el.append(det);
     }
   });
+  // ---------- Family summary: a separate view (#summary) with one row per SEBI family ----------
+  const famStats = () => {
+    const R = fams(), F = funds(); if (!R) return null;
+    const live = new Map((F || []).filter((f) => f.kind === 'SIF').map((f) => [f.id, f.days_live]));
+    const one = (rs) => {
+      const a = rs.filter((r) => r.aum > 0).sort((x, y) => y.aum - x.aum), tot = d3.sum(a, (r) => r.aum), top = a.slice(0, 5);
+      const dl = rs.map((r) => live.get(r.code)).filter(Number.isFinite);
+      return { rs, n: rs.length, houses: new Set(rs.map((r) => r.family)).size, nAum: a.length, tot, avg: a.length ? tot / a.length : NaN,
+        top, topAvg: top.length ? d3.mean(top, (r) => r.aum) : NaN, topShare: tot ? d3.sum(top, (r) => r.aum) / tot * 100 : NaN,
+        med: dl.length ? d3.median(dl) : NaN, minD: d3.min(dl), maxD: d3.max(dl) };
+    };
+    return { all: one(R), fam: CATS.map((c) => ({ c, ...one(R.filter((r) => r.category === c.key)) })) };
+  };
+  dash.draw('famsumnote', (el) => {
+    const R = fams(), F = funds(); if (!R) { el.textContent = '—'; return; }
+    const last = F && d3.max(F.filter((f) => f.kind === 'SIF'), (f) => f.last_date);
+    el.textContent = 'AUM read from Groww ' + readDate() + (last ? '; NAVs to ' + fmtDate(parseDate(last)) : '') + '. Families are SEBI\'s SIF investment strategy types; a fund house may run funds in several.';
+  });
+  dash.draw('famsumtiles', (el) => {
+    const T = famStats(); if (!T) { el.textContent = '—'; return; }
+    const a = T.all;
+    const t = [['Families with a fund', T.fam.filter((g) => g.n).length + ' of ' + CATS.length], ['Fund houses', String(a.houses)], ['Funds', String(a.n)],
+      ['Total AUM', fcr(a.tot)], ['Average AUM per fund', fcr(a.avg)], ['Median days live', Number.isFinite(a.med) ? f0(a.med) : '–']];
+    el.replaceChildren();
+    for (const [k, v] of t) { const d = document.createElement('div'); d.className = 'tile'; const s1 = document.createElement('span'); s1.textContent = k; const b = document.createElement('b'); b.textContent = v; d.append(s1, b); el.append(d); }
+  });
+  dash.draw('famsum', (el) => {
+    const T = famStats(); if (!T) { failNote(el, dash.data('families').status); return; }
+    const H = ['Family and SEBI rule', 'Fund houses', 'Funds', 'Total AUM', 'Share of all SIF AUM', 'Average AUM per fund', 'Average AUM, top 5', 'Top 5 share of family', 'Median days live (newest – oldest)', 'Top 5 funds by AUM'];
+    const tbl = document.createElement('table'), th = tbl.createTHead().insertRow(), tb = tbl.createTBody();
+    H.forEach((h, i) => { const c = document.createElement('th'); c.textContent = h; if (i === 0 || i === H.length - 1) c.className = 'l'; th.append(c); });
+    const pct = (v) => (Number.isFinite(v) ? (v > 0 && v < 1 ? f1(v) : f0(v)) + '%' : '–');
+    const row = (g, isTot) => {
+      const tr = tb.insertRow(); if (isTot) tr.className = 'tot';
+      const c0 = tr.insertCell(); c0.className = 'fam';
+      const b = document.createElement('b');
+      if (!isTot) { const sw = document.createElement('i'); sw.className = 'sw'; sw.style.background = g.c.c; b.append(sw); }
+      b.append(document.createTextNode(isTot ? 'All SIF families' : g.c.key)); c0.append(b);
+      if (!isTot) { const r = document.createElement('span'); r.className = 'rule'; r.textContent = g.c.rule + ' ' + g.c.liq; c0.append(r); }
+      const vals = g.n ? [String(g.houses), String(g.n), fcr(g.tot), pct(g.tot / T.all.tot * 100), fcr(g.avg), fcr(g.topAvg), pct(g.topShare),
+        Number.isFinite(g.med) ? f0(g.med) + (g.n > 1 ? ' (' + f0(g.minD) + ' – ' + f0(g.maxD) + ')' : '') : '–'] : ['0', '0', '–', '–', '–', '–', '–', '–'];
+      for (const v of vals) { const c = tr.insertCell(); c.className = 'n'; c.textContent = v; }
+      const ct = tr.insertCell(); ct.className = 'top';
+      if (!g.n) ct.textContent = 'No fund launched yet';
+      else g.top.forEach((r, i) => { const d = document.createElement('div'); d.textContent = (i + 1) + '. ' + r.family + ' (' + (AMC_SHORT[r.amc] || r.amc) + ')' + (isTot && CAT_SHORT[r.category] ? ' ' + CAT_SHORT[r.category] : '') + ' · ' + fcr(r.aum); ct.append(d); });
+      if (!isTot && g.n > g.nAum) { const d = document.createElement('div'); d.className = 'note'; d.textContent = (g.n - g.nAum) + ' newer fund' + (g.n - g.nAum > 1 ? 's' : '') + ' with no AUM yet'; ct.append(d); }
+    };
+    for (const g of T.fam) row(g, false);
+    row(T.all, true);
+    el.replaceChildren(tbl);
+  });
+  // view switch: #summary shows the family summary; anything else shows the dashboard (redrawn so charts size to the page)
+  function setView() {
+    const sum = location.hash === '#summary';
+    if (!root) return;
+    const was = root.classList.contains('view-summary');
+    root.classList.toggle('view-summary', sum);
+    if (was && !sum) { const names = new Set([...root.querySelectorAll('[data-draw]')].map((e) => e.dataset.draw)); for (const n of names) dash.draw(n); }
+    if (was !== sum) window.scrollTo(0, 0);
+  }
+  root && root.addEventListener('click', (ev) => {
+    const a = ev.target.closest('a[data-view]'); if (!a) return;
+    ev.preventDefault();
+    if (a.dataset.view === 'summary') location.hash = 'summary';
+    else history.pushState('', document.title, location.pathname + location.search), setView();
+  });
+  window.addEventListener('hashchange', setView);
+  setView();
 })();
