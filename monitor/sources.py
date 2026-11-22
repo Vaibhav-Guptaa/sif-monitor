@@ -118,9 +118,20 @@ def mf_history(code: int, start: str = "2025-01-01", end: str | None = None) -> 
     """All NAVs for one mutual-fund scheme by AMFI code."""
     end = end or date.today().isoformat()
     url = f"{AMFI}/api/nav-history?query_type=historical_period&from_date={start}&to_date={end}&sd_id={code}"
-    d = json.loads(get(url))["data"]
-    recs = d["nav_groups"][0]["historical_records"]
-    return [(r["date"], float(r["nav"])) for r in recs]
+    try:
+        d = json.loads(get(url))["data"]
+        recs = d["nav_groups"][0]["historical_records"]
+        return [(r["date"], float(r["nav"])) for r in recs]
+    except Exception as e:  # AMFI's history service sometimes times out; mfapi.in serves the same AMFI scheme code
+        print(f"  AMFI nav-history failed for {code} ({e}); falling back to mfapi.in")
+        d = json.loads(get(f"https://api.mfapi.in/mf/{code}"))["data"]
+        out = []
+        for r in d:
+            dd, mm, yy = r["date"].split("-")
+            iso = f"{yy}-{mm}-{dd}"
+            if start <= iso <= end:
+                out.append((iso, float(r["nav"])))
+        return sorted(out)
 
 
 def nifty_price(start: str = "2025-01-01", want: str | None = None) -> list[tuple[str, float]]:
