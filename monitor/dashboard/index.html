@@ -123,8 +123,11 @@
 .sif-viewlink { display: flex; flex-wrap: wrap; gap: 10px; font-size: var(--cds-font-size-caption); }
 .sif-viewlink a { font-weight: 600; color: var(--color-accent, #2563eb); text-decoration: none; border: 1px solid var(--color-border-line); border-radius: 999px; padding: 4px 12px; background: var(--color-panel); }
 .sif-viewlink a:hover { border-color: currentColor; }
-.sif.view-summary > :not(.sif-head):not(#famsum) { display: none !important; }
-.sif:not(.view-summary) > #famsum { display: none; }
+.sif > [data-pane] { display: none; }
+.sif[data-view="summary"] > [data-pane="summary"], .sif[data-view="monthly"] > [data-pane="monthly"] { display: grid; }
+.sif[data-view] > :not(.sif-head):not([data-pane]) { display: none !important; }
+.sif [data-pane="monthly"] h2 { font-size: 15px; margin: 6px 0 0; }
+.sif [data-pane="monthly"] .sif-chart { width: 100%; max-width: none; }
 .sif [data-draw="famsum"] table { min-width: 820px; }
 .sif [data-draw="famsum"] th { white-space: normal; max-width: 92px; line-height: 1.25; }
 .sif [data-draw="famsum"] td { vertical-align: top; }
@@ -140,15 +143,40 @@
   <header class="sif-head" id="top">
     <div class="sif-eyebrow">Specialised Investment Funds · daily official NAVs</div>
     <h1>SIF Competitor Monitor</h1>
-    <nav class="sif-viewlink" aria-label="Views"><a href="#summary" data-view="summary">Family summary →</a></nav>
+    <nav class="sif-viewlink" aria-label="Views"><a href="#summary" data-view="summary">Family summary →</a><a href="#monthly" data-view="monthly">Monthly portfolios →</a></nav>
   </header>
 
-  <section class="sif-panel" id="famsum" aria-labelledby="famsum-h">
+  <section class="sif-panel" id="famsum" data-pane="summary" aria-labelledby="famsum-h">
     <header><h2 id="famsum-h">SIF families at a glance</h2><a class="sif-viewlink" href="#" data-view="dashboard" style="text-decoration:none">← Back to dashboard</a></header>
     <p class="note" data-draw="famsumnote" data-source="families funds">—</p>
     <div class="sif-tiles" data-draw="famsumtiles" data-source="families funds"></div>
     <div class="sif-tablewrap" data-draw="famsum" data-source="families funds"></div>
     <p class="note">Fund houses: distinct SIF platforms in the family (each fund house runs one platform, e.g. Altiva for Edelweiss). AUM: latest figure Groww reports for each fund (the same figure as the scoreboard). Average AUM is across funds that report one. Days live: from a fund's first official NAV to the latest NAV date. SEBI rules: Master Circular for Mutual Funds, 20 Mar 2026, chapter 21, and the SIF FAQ of 22 Sep 2026.</p>
+  </section>
+
+  <section class="sif-panel" id="monthly" data-pane="monthly" aria-labelledby="monthly-h">
+    <header><h2 id="monthly-h" style="font-size:var(--cds-font-size-heading, 18px)">Monthly portfolios: AUM, cash and debt, cap exposure, strategies</h2><a class="sif-viewlink" href="#" data-view="dashboard" style="text-decoration:none">← Back to dashboard</a></header>
+    <p class="note" data-draw="mNote" data-source="monthly families">—</p>
+    <h2>AUM at each month-end, all hybrid long-short funds</h2>
+    <div class="sif-controls"><span class="sif-seg" id="m-scale" role="group" aria-label="Scale"><button type="button" data-mscale="log" class="on" aria-pressed="true">Log scale</button><button type="button" data-mscale="linear">Linear</button></span></div>
+    <div class="sif-chart" data-draw="mAum" data-source="monthly families"></div>
+    <h2>Compare funds on one measure</h2>
+    <div class="sif-controls"><label for="m-metric">Measure <select class="dash-select" id="m-metric" aria-label="Measure">
+      <option value="fi">Debt + money market + cash, % of NAV</option><option value="tb">T-bills, % of NAV</option><option value="eq">Net equity (shares + futures), % of NAV</option>
+      <option value="calls">Stocks with options written on them, % of NAV</option><option value="arb">Arbitrage book (stock + short future), % of NAV</option><option value="nl">Net non-large-cap exposure, % of NAV</option></select></label></div>
+    <div class="sif-chart sm" data-draw="mPeers" data-source="monthly families"></div>
+    <h2>One fund in detail</h2>
+    <div class="sif-controls"><label for="m-fund">Fund <select class="dash-select" id="m-fund" aria-label="Fund" data-draw="mFundSel" data-source="monthly families"></select></label></div>
+    <p class="note" data-draw="mFundNote" data-source="monthly families">—</p>
+    <h2>Cash, T-bills and debt, % of NAV (bold = total)</h2>
+    <div class="sif-chart sm" data-draw="mCash" data-source="monthly families"></div>
+    <h2>Long stock by market-cap band, % of NAV</h2>
+    <div class="sif-chart sm" data-draw="mCap" data-source="monthly families"></div>
+    <h2>Net equity exposure after futures, % of NAV</h2>
+    <div class="sif-chart sm" data-draw="mNet" data-source="monthly families"></div>
+    <h2>Where each rupee sits, decoded stock by stock</h2>
+    <div class="sif-chart" data-draw="mStrat" data-source="monthly families"></div>
+    <p class="note">Source: AMC month-end portfolio disclosures as extracted into the research workbook (checked: its summary table recomputes exactly from its holdings sheet; totals agree with official AMC files and Groww copies within about 0.2 points where we hold them). Strategies are decoded per stock from its shares, its own futures and its own options with the same classifier as the main dashboard. Market-cap bands use AMFI's Jan–Jun 2026 rank list for every month, so older months are indicative. Month-end snapshots only.</p>
   </section>
 
   <section class="sif-panel" id="timeseries">

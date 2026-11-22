@@ -1109,21 +1109,146 @@
     row(T.all, true);
     el.replaceChildren(tbl);
   });
+  // ---------- Monthly portfolios (view #monthly): AMC month-end disclosures from the research workbook ----------
+  const MS = { fund: null, scale: 'log', metric: 'fi' };
+  const mrows = () => {
+    const d = rows('monthly'); if (!d) return null; if (cache.has(d)) return cache.get(d);
+    const o = d.map((r) => { const q = { ...r }; for (const k of Object.keys(r)) if (!['fund', 'month', 'asof', 'opt_note'].includes(k)) q[k] = num(r[k]); q.date = parseDate(String(r.asof).slice(0, 10)) || parseDate(r.month + '-01'); q.fi = q.tbills + q.mm_other + q.corp_debt + q.gsec + q.treps_cash; q.calls = q.s_calls + q.s_both + q.s_untyped; return q; });
+    cache.set(d, o); return o;
+  };
+  const mfunds = () => { const R = mrows(); return R ? d3.groups(R, (r) => r.fund).map(([f, a]) => { a.sort((x, y) => x.date - y.date); return { f, a, last: a[a.length - 1] }; }).sort((x, y) => y.last.aum_cr - x.last.aum_cr) : []; };
+  const mhouse = (f) => { const R = fams(); const r = R && R.find((x) => x.family === f && x.category === 'Hybrid long-short'); return r ? (AMC_SHORT[r.amc] || r.amc) : ''; };
+  const mname = (f) => f + (mhouse(f) ? ' (' + mhouse(f) + ')' : '');
+  const mfcol = (f) => col(Math.max(0, mfunds().findIndex((x) => x.f === f)));
+  const MCOL = { cash: '#94a3b8', tb: '#0ea5e9', mm: '#7dd3fc', gsec: '#16a34a', corp: '#1e3a8a', large: '#1d4ed8', mid: '#f59e0b', small: '#dc2626', arb: '#475569', calls: '#2563eb', both: '#7c3aed', untyped: '#93c5fd', plain: '#ea580c', ipo: '#facc15', reit: '#14b8a6', rest: '#e5e7eb' };
+  function legendInto(el, items) {
+    const d = document.createElement('div'); d.className = 'sif-legend';
+    for (const [c, l] of items) { const sp = document.createElement('span'); const i = document.createElement('i'); i.style.background = c; sp.append(i, document.createTextNode(l)); d.append(sp); }
+    el.append(d);
+  }
+  function drawStack(el, A, series, opt = {}) {
+    const H = opt.h || 290; const { svg, tip, W } = chartFrame(el, H);
+    const m = { t: 20, r: 8, b: 30, l: 36 };
+    const tot = A.map((r) => d3.sum(series, (q) => Math.max(0, q.f(r) || 0)));
+    const x = d3.scaleBand().domain(A.map((r) => r.month)).range([m.l, W - m.r]).padding(0.2);
+    const y = d3.scaleLinear().domain([0, opt.ymax || Math.ceil((d3.max(tot) || 10) / 10) * 10 + (opt.total ? 6 : 0)]).range([H - m.b, m.t]);
+    svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r)).tickFormat(''));
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5));
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickFormat((mo) => fmtMon(parseDate(mo + '-01'))).tickSizeOuter(0));
+    A.forEach((r) => {
+      let acc = 0;
+      for (const q of series) {
+        const v = Math.max(0, q.f(r) || 0); if (v <= 0) continue;
+        svg.append('rect').attr('x', x(r.month)).attr('width', x.bandwidth()).attr('y', y(acc + v)).attr('height', Math.max(0, y(acc) - y(acc + v))).style('fill', q.c).style('stroke', '#fff').style('stroke-width', 0.5);
+        if (v >= 3.5 && x.bandwidth() > 22 && y(acc) - y(acc + v) > 11) svg.append('text').attr('x', x(r.month) + x.bandwidth() / 2).attr('y', y(acc + v / 2)).attr('dy', '0.35em').attr('text-anchor', 'middle').text(f0(v)).style('fill', q.dark ? '#111' : '#fff').style('font-size', '9.5px').style('pointer-events', 'none');
+        acc += v;
+      }
+      if (opt.total) svg.append('text').attr('x', x(r.month) + x.bandwidth() / 2).attr('y', y(acc) - 4).attr('text-anchor', 'middle').text(f0(acc) + '%').style('font-weight', 700).style('font-size', '10px').style('fill', 'var(--color-fg)');
+      svg.append('rect').attr('x', x(r.month) - 2).attr('width', x.bandwidth() + 4).attr('y', m.t).attr('height', H - m.t - m.b).style('fill', 'transparent')
+        .on('pointerenter pointermove', (ev) => {
+          tip.attr('hidden', null).html('');
+          tip.append('div').text(fmtMon(r.date) + ' · AUM ₹' + f0(r.aum_cr) + ' cr').style('font-weight', 600);
+          for (const q of series) { const v = q.f(r) || 0; if (Math.abs(v) < 0.05) continue; const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(q.l); a1.append('span').text(f1(v) + '%'); }
+          const [px] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', '10px');
+        }).on('pointerleave', () => tip.attr('hidden', ''));
+    });
+    legendInto(el, series.map((q) => [q.c, q.l]));
+  }
+  // lines over time, labelled at the right end (labels pushed apart so they stay readable)
+  function drawLines(el, items, opt = {}) {
+    const H = opt.h || 320; const { svg, tip, W } = chartFrame(el, H);
+    const wide = W > 520; const m = { t: 12, r: wide ? 128 : 10, b: 28, l: 46 };
+    const all = items.flatMap((it) => it.pts); if (!all.length) { failNote(el, 'ok'); return; }
+    const x = d3.scaleTime().domain(d3.extent(all, (p) => p.date)).range([m.l, W - m.r]);
+    const vals = all.map((p) => p.v).filter((v) => Number.isFinite(v) && (!opt.log || v > 0));
+    const y = (opt.log ? d3.scaleLog().domain([d3.min(vals) * 0.8, d3.max(vals) * 1.15]) : d3.scaleLinear().domain([Math.min(0, d3.min(vals)), d3.max(vals) * 1.08]).nice()).range([H - m.b, m.t]);
+    const ax = d3.axisLeft(y).ticks(opt.log ? 5 : 6, opt.log ? d3.format(',.0f') : undefined);
+    svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r)).tickFormat(''));
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(ax);
+    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(W < 520 ? 4 : 8).tickFormat(fmtMon));
+    const ln = d3.line().defined((p) => Number.isFinite(p.v) && (!opt.log || p.v > 0)).x((p) => x(p.date)).y((p) => y(p.v));
+    for (const it of items) { svg.append('path').attr('d', ln(it.pts)).style('fill', 'none').style('stroke', it.c).style('stroke-width', it.w || 2).style('stroke-dasharray', it.dash || null);
+      for (const p of it.pts) if (Number.isFinite(p.v) && (!opt.log || p.v > 0)) svg.append('circle').attr('cx', x(p.date)).attr('cy', y(p.v)).attr('r', 2.6).style('fill', it.c)
+        .on('pointerenter pointermove', (ev) => { tip.attr('hidden', null).html(''); tip.append('div').text(it.name).style('font-weight', 600); const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(fmtMon(p.date)); a1.append('span').text((opt.fmt || f1)(p.v)); const [px, py] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', (py + 12) + 'px'); })
+        .on('pointerleave', () => tip.attr('hidden', '')); }
+    if (wide) {
+      const ends = items.map((it) => { const p = [...it.pts].reverse().find((q) => Number.isFinite(q.v) && (!opt.log || q.v > 0)); return p ? { it, y: y(p.v) } : null; }).filter(Boolean).sort((a, b) => a.y - b.y);
+      for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 12) ends[i].y = ends[i - 1].y + 12;
+      for (const e of ends) svg.append('text').attr('x', W - m.r + 6).attr('y', e.y).attr('dy', '0.32em').text(e.it.name).style('fill', e.it.c).style('font-size', '11px').style('font-weight', 600);
+    }
+  }
+  dash.draw('mNote', (el) => {
+    const R = mrows(); if (!R) { el.textContent = '—'; return; }
+    const gaps = [...new Set(R.filter((r) => r.deriv_ok === 0).map((r) => r.fund))];
+    el.textContent = 'Month-end portfolios Oct 2025 – Oct 2026 for ' + new Set(R.map((r) => r.fund)).size + ' funds, taken from the AMCs\' own monthly disclosures. ' + (gaps.length ? 'No futures or options rows were captured for ' + gaps.join(', ') + ', so their net equity, arbitrage and option figures are not shown (their cash, debt and cap figures are fine).' : '');
+  });
+  dash.draw('mAum', (el) => {
+    const F = mfunds(); if (!F.length) { failNote(el, dash.data('monthly').status); return; }
+    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.map((r) => ({ date: r.date, v: r.aum_cr })) })), { log: MS.scale === 'log', fmt: (v) => '₹' + f0(v) + ' cr', h: 360 });
+  });
+  dash.draw('mPeers', (el) => {
+    const F = mfunds(); if (!F.length) { failNote(el, dash.data('monthly').status); return; }
+    const M = { fi: ['fi', false], tb: ['tbills', false], eq: ['net_equity', true], calls: ['calls', true], arb: ['s_arb', true], nl: ['net_nonlarge', true] }[MS.metric];
+    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.filter((r) => !M[1] || r.deriv_ok === 1).map((r) => ({ date: r.date, v: r[M[0]] })) })).filter((it) => it.pts.length), { fmt: (v) => f1(v) + '%', h: 340 });
+  });
+  const curFund = () => { const F = mfunds(); if (!F.length) return null; return F.find((g) => g.f === MS.fund) || F[0]; };
+  dash.draw('mFundSel', (el) => {
+    const F = mfunds(); if (!F.length) return;
+    const cur = curFund().f; el.replaceChildren();
+    for (const g of F) { const o = document.createElement('option'); o.value = g.f; o.textContent = mname(g.f) + ' · ₹' + f0(g.last.aum_cr) + ' cr'; if (g.f === cur) o.selected = true; el.append(o); }
+    el.onchange = () => { MS.fund = el.value; for (const n of ['mFundNote', 'mCash', 'mCap', 'mNet', 'mStrat']) dash.draw(n); };
+  });
+  dash.draw('mFundNote', (el) => {
+    const g = curFund(); if (!g) { el.textContent = '—'; return; }
+    const l = g.last, A = g.a;
+    el.textContent = mname(g.f) + ': ' + A.length + ' month-ends, ' + fmtMon(A[0].date) + ' – ' + fmtMon(l.date) + '; AUM ₹' + f0(A[0].aum_cr) + ' cr → ₹' + f0(l.aum_cr) + ' cr. ' +
+      (l.deriv_ok === 0 ? 'No futures or options captured for this fund: arbitrage, net equity and option shares are understated, treat the strategy chart as incomplete. ' : '') +
+      (A.some((r) => /not disclosed/.test(r.opt_note)) ? 'Call-versus-put type was not disclosed in some months (shown as "options written, type not disclosed").' : '');
+  });
+  dash.draw('mCash', (el) => {
+    const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
+    drawStack(el, g.a, [{ l: 'Cash, TREPS, receivables', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }, { l: 'T-bills', c: MCOL.tb, f: (r) => r.tbills }, { l: 'Other money market', c: MCOL.mm, dark: true, f: (r) => r.mm_other },
+      { l: 'G-secs', c: MCOL.gsec, f: (r) => r.gsec }, { l: 'Corporate bonds and other debt', c: MCOL.corp, f: (r) => r.corp_debt }], { total: true });
+  });
+  dash.draw('mCap', (el) => {
+    const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
+    drawStack(el, g.a, [{ l: 'Large cap (rank 1–100)', c: MCOL.large, f: (r) => r.long_large }, { l: 'Mid cap (101–250)', c: MCOL.mid, f: (r) => r.long_mid }, { l: 'Small cap and unclassified (251+)', c: MCOL.small, f: (r) => r.long_small + r.long_unclassified }], { total: true });
+  });
+  dash.draw('mNet', (el) => {
+    const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
+    const A = g.a.filter((r) => r.deriv_ok === 1);
+    if (!A.length) { el.replaceChildren(); const p = document.createElement('p'); p.className = 'note'; p.textContent = 'Not shown: futures were not captured for this fund, so net exposure cannot be computed.'; el.append(p); return; }
+    drawLines(el, [{ name: 'Net large cap', c: MCOL.large, pts: A.map((r) => ({ date: r.date, v: r.net_large })) }, { name: 'Net non-large cap', c: MCOL.small, pts: A.map((r) => ({ date: r.date, v: r.net_nonlarge })) },
+      { name: 'Total net equity', c: '#111827', dash: '5 4', pts: A.map((r) => ({ date: r.date, v: r.net_equity })) }, { name: 'Arbitrage book', c: MCOL.arb, w: 1.4, pts: A.map((r) => ({ date: r.date, v: r.s_arb })) }], { fmt: (v) => f1(v) + '%', h: 300 });
+  });
+  dash.draw('mStrat', (el) => {
+    const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
+    const S1 = [{ l: 'Arbitrage (stock + short future)', c: MCOL.arb, f: (r) => r.s_arb }, { l: 'Covered call (calls written on held stock)', c: MCOL.calls, f: (r) => r.s_calls },
+      { l: 'Calls and puts written / collar / protective put', c: MCOL.both, f: (r) => r.s_both }, { l: 'Options written, type not disclosed', c: MCOL.untyped, dark: true, f: (r) => r.s_untyped },
+      { l: 'Plain stock, no hedge', c: MCOL.plain, f: (r) => r.s_plain }, { l: 'IPO / new listing', c: MCOL.ipo, dark: true, f: (r) => r.s_ipo }, { l: 'T-bills', c: MCOL.tb, f: (r) => r.tbills },
+      { l: 'Other money market', c: MCOL.mm, dark: true, f: (r) => r.mm_other }, { l: 'Corporate bonds and G-secs', c: MCOL.corp, f: (r) => r.corp_debt + r.gsec }, { l: 'Cash and TREPS', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }, { l: 'REITs / InvITs', c: MCOL.reit, f: (r) => r.reit }];
+    drawStack(el, g.a, S1, { h: 380, ymax: 100 });
+  });
   // view switch: #summary shows the family summary; anything else shows the dashboard (redrawn so charts size to the page)
   function setView() {
-    const sum = location.hash === '#summary';
     if (!root) return;
-    const was = root.classList.contains('view-summary');
-    root.classList.toggle('view-summary', sum);
-    if (was && !sum) { const names = new Set([...root.querySelectorAll('[data-draw]')].map((e) => e.dataset.draw)); for (const n of names) dash.draw(n); }
-    if (was !== sum) window.scrollTo(0, 0);
+    const v = location.hash === '#summary' ? 'summary' : location.hash === '#monthly' ? 'monthly' : '';
+    const was = root.dataset.view || '';
+    if (v) root.dataset.view = v; else delete root.dataset.view;
+    if (was === v) return;
+    if (!v) { const names = new Set([...root.querySelectorAll('[data-draw]')].map((e) => e.dataset.draw)); for (const n of names) dash.draw(n); }
+    if (v === 'monthly') for (const n of ['mAum', 'mPeers', 'mFundSel', 'mFundNote', 'mCash', 'mCap', 'mNet', 'mStrat']) dash.draw(n);
+    window.scrollTo(0, 0);
   }
   root && root.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-mscale]');
+    if (b) { MS.scale = b.dataset.mscale; for (const x of root.querySelectorAll('#m-scale button')) { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); } dash.draw('mAum'); return; }
     const a = ev.target.closest('a[data-view]'); if (!a) return;
     ev.preventDefault();
-    if (a.dataset.view === 'summary') location.hash = 'summary';
+    if (a.dataset.view !== 'dashboard') location.hash = a.dataset.view;
     else history.pushState('', document.title, location.pathname + location.search), setView();
   });
+  const mm = root && root.querySelector('#m-metric'); if (mm) mm.addEventListener('change', () => { MS.metric = mm.value; dash.draw('mPeers'); });
   window.addEventListener('hashchange', setView);
   setView();
 })();

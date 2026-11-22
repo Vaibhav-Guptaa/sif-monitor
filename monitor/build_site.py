@@ -50,6 +50,9 @@ def main() -> None:
     src = (DASHSRC / "index.html").read_text()
     src = src.replace('<meta name="dash-one-writer">', "").replace('<link rel="stylesheet" href="fonts.css">', "")
     src = re.sub(r'<script src="sif.js"></script>\s*$', "", src.strip())
+    static = HERE.parent / "data" / "monitor" / "ref" / "monthly_portfolios.csv"   # month-end portfolios from AMC disclosures (static)
+    if static.exists():
+        DATA.mkdir(parents=True, exist_ok=True); shutil.copy(static, DATA / "monthly.csv")
     files = sorted(p.name for p in DATA.glob("*.csv"))
     dl = "".join(f'<a href="data/{f}" download>{f}</a>' for f in files)
     src = src.replace('<details>\n      <summary>How the data is collected</summary>',
