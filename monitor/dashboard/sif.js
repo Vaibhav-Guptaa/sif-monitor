@@ -1229,10 +1229,83 @@
       { l: 'Other money market', c: MCOL.mm, dark: true, f: (r) => r.mm_other }, { l: 'Corporate bonds and G-secs', c: MCOL.corp, f: (r) => r.corp_debt + r.gsec }, { l: 'Cash and TREPS', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }, { l: 'REITs / InvITs', c: MCOL.reit, f: (r) => r.reit }];
     drawStack(el, g.a, S1, { h: 380, ymax: 100 });
   });
+  // ---------- Ledgers (view #ledgers): IPOs, SIF IPO calls, merger arbitrage, workbook IPO ledger ----------
+  const LS = { tab: 'ipo', q: '', sort: null };
+  const pctf = (v, frac) => (Number.isFinite(v) ? (frac ? v * 100 : v) : NaN);
+  const LCONF = { 'confirmed pair': '#16a34a', probable: '#ca8a04' };
+  function lCols() {
+    const n = (k, l, f, o = {}) => ({ k, l, f, ...o });
+    const p1 = (v) => (Number.isFinite(v) ? sg1(v) + '%' : '–'), c0 = (v) => (Number.isFinite(v) ? '₹' + f0(v) : '–'), x1 = (v) => (Number.isFinite(v) ? f1(v) + '×' : '–');
+    if (LS.tab === 'ipo') return [n('listing_date', 'Listed', (v) => v || 'pending'), n('company', 'Company', null, { w: 1 }), n('type', 'Type'), n('issue_size_cr', 'Issue ₹ cr', c0, { num: 1 }),
+      n('qib_sub_x', 'QIB sub.', x1, { num: 1 }), n('listing_gain_pct', 'Listing gain', p1, { num: 1 }), n('ret_d30_pct', 'Day 30', p1, { num: 1 }), n('ret_d90_pct', 'Day 90', p1, { num: 1 }),
+      n('n_sif_participants', 'SIFs in', f0, { num: 1 }), n('n_live_sif_strategies', 'SIFs live', f0, { num: 1 }), n('sif_strategies_in_anchor_with_rs_cr', 'SIF anchor tickets', (v) => (v || '–').replace(/ \(SIF-\d+\)/g, ''), { w: 1 }),
+      n('sif_nonanchor_evidence', 'Non-anchor evidence', (v) => v || '', { w: 1 })];
+    if (LS.tab === 'sif') return [n('brand', 'Platform'), n('scheme', 'Strategy', null, { w: 1 }), n('category', 'Family'), n('first_nav_date', 'First NAV'), n('ipos_in_window_since_first_nav', 'IPOs since launch', f0, { num: 1 }),
+      n('ipos_taken_anchor', 'Taken as anchor', f0, { num: 1 }), n('ipos_taken_nonanchor_evidence', 'Non-anchor', f0, { num: 1 }), n('take_rate_pct', 'Take rate', (v) => (Number.isFinite(v) ? f0(v) + '%' : '–'), { num: 1 }),
+      n('anchor_total_cr', 'Anchor ₹ cr', (v) => (Number.isFinite(v) ? '₹' + f1(v) : '–'), { num: 1 }), n('avg_listing_gain_taken_pct', 'Avg listing gain, taken', p1, { num: 1 }), n('avg_listing_gain_all_opportunity_pct', 'Avg listing gain, all IPOs', p1, { num: 1 }),
+      n('hit_rate_d30_pct', 'Day-30 hit rate', (v) => (Number.isFinite(v) ? f0(v) + '%' : '–'), { num: 1 }), n('skipped_big_winner_names', 'Big winners skipped', (v) => v || '–', { w: 1 })];
+    if (LS.tab === 'merger') return [n('category', 'Type'), n('target', 'Target', null, { w: 1 }), n('acquirer', 'Acquirer / offerer', null, { w: 1 }), n('terms', 'Terms', null, { w: 1 }), n('announcement_date', 'Announced'),
+      n('status', 'Status', (v) => (v || '').replace(/\s*\(.*$/, '')), n('spread_entry', 'Spread at entry', (v) => (Number.isFinite(v) ? f1(v * 100) + '%' : '–'), { num: 1 }),
+      n('ann_spread_to_completion', 'Annualised to completion', (v) => (Number.isFinite(v) ? f1(v * 100) + '%' : '–'), { num: 1 }), n('realised_hedged_ret', 'Realised hedged', (v) => (Number.isFinite(v) ? sg1(v * 100) + '%' : '–'), { num: 1 }),
+      n('both_legs_listed_and_futures_hedgeable', 'Hedgeable'), n('_sifs', 'SIFs seen (confidence)', null, { w: 1, html: 1 })];
+    return [n('fund', 'Fund'), n('ipo', 'IPO', null, { w: 1 }), n('route', 'Route (as claimed)', null, { w: 1 }), n('listed', 'Listed'), n('amount_cr', 'Amount ₹ cr', (v) => (Number.isFinite(v) ? f1(v) : '–'), { num: 1 }),
+      n('listing_gain_pct', 'Listing gain', p1, { num: 1 }), n('evidence', 'Evidence (as claimed)', null, { w: 1 }), n('_check', 'Check against exchange letters', null, { w: 1, html: 1 })];
+  }
+  function lRows() {
+    const raw = { ipo: 'ipo_master', sif: 'ipo_summary', merger: 'merger', wb: 'ipo_workbook' }[LS.tab];
+    const d = rows(raw); if (!d) return null;
+    const numify = (r) => { const o = { ...r }; for (const k of Object.keys(r)) { const v = num(r[k]); if (r[k] !== '' && Number.isFinite(v) && !/date|listed|symbol|isin|code|month/.test(k)) o[k] = v; } return o; };
+    let R = d.map(numify);
+    if (LS.tab === 'merger') {
+      const P = rows('merger_pos') || [];
+      const rank = (c) => (c === 'confirmed pair' ? 3 : c === 'probable' ? 2 : 1);
+      R = R.map((r) => { const by = d3.rollups(P.filter((p) => p.deal_id === r.deal_id), (v) => v.sort((a, b) => rank(b.confidence) - rank(a.confidence))[0].confidence, (p) => p.fund.replace(/ Long[ -]Short Fund$| Long Short Fund$/i, ''))
+        .sort((a, b) => rank(b[1]) - rank(a[1]));
+        return { ...r, _sifs: by.map(([f, c]) => '<span class="pill" style="background:' + (LCONF[c] ? LCONF[c] + '22;color:' + LCONF[c] : '#e5e7eb;color:#374151') + '">' + c + '</span> ' + f.replace(/[<>&]/g, '')).join('<br>'), _sifn: by.length }; });
+    }
+    if (LS.tab === 'wb') {
+      // check each anchor claim against the anchor rows parsed from the exchange letters (ipo_part), by platform + family + symbol
+      const fam = (t) => { t = String(t || '').toLowerCase(); return /hybrid/.test(t) ? 'hyb' : /ex.?\s?top/.test(t) ? 'x100' : /asset/.test(t) ? 'aaa' : /sector/.test(t) ? 'sr' : 'eq'; };
+      const P = (rows('ipo_part') || []).filter((p) => /anchor/i.test(p.route));
+      const sk = (sym, name) => { const t = String(sym || '').toUpperCase().split(/[\s(]/)[0]; return t || String(name || '').toLowerCase().replace(/[^a-z ]/g, '').split(' ').slice(0, 2).join(' '); };
+      const keysOf = (p) => [sk(p.symbol, ''), sk('', p.company)];
+      const have = new Set(P.flatMap((p) => keysOf(p).map((k) => (p.brand || '').toLowerCase() + '|' + fam(p.scheme_registry) + '|' + k)));
+      const anyBrand = new Set(P.flatMap((p) => keysOf(p).map((k) => k + '|' + (p.brand || '').toLowerCase())));
+      R = R.map((r) => {
+        const brand = String(r.fund || '').split(' ')[0].toLowerCase(), sym = sk(r.symbol, r.ipo);
+        let chk = 'Not an anchor claim: not checkable from the letters';
+        if (/anchor/i.test(r.route || '')) chk = have.has(brand + '|' + fam(r.fund) + '|' + sym) ? '<span style="color:#16a34a">Matches the exchange anchor letter</span>'
+          : anyBrand.has(sym + '|' + brand) ? '<b style="color:#dc2626">Wrong scheme: the letter names a different ' + r.fund.split(' ')[0] + ' strategy</b>' : '<b style="color:#dc2626">Not found in the exchange anchor letter</b>';
+        return { ...r, _check: chk };
+      });
+    }
+    return R;
+  }
+  dash.draw('lNote', (el) => {
+    const t = {
+      ipo: 'Every mainboard IPO, InvIT and REIT listed 1 Aug 2025 – 22 Nov 2026 (189). "SIFs in" counts strategies named in the exchange-filed anchor allocation letter plus hybrid funds proven to hold the stock at a month-end before or at listing; "SIFs live" counts strategies with a NAV by the anchor date. No SIF existed before 8 Oct 2025. QIB multiples: Groww (excluding anchor). Returns from the issue price.',
+      sif: 'One row per SIF strategy. Same-house schemes often split one anchor ticket across Equity, Ex-Top 100, Hybrid and Asset-allocator funds, so per-strategy counts overstate independent decisions. Non-anchor (regular QIB book) participation is visible only for hybrid funds, from month-end holdings.',
+      merger: 'Stock-swap mergers, hedgeable demergers, open offers, delistings and tender buybacks, Aug 2025 – Nov 2026 (76). Not a census: SEBI open-offer tables stop at Feb 2025 and NSE/BSE refused automated access. SIF positions are inferred from month-end holdings: "confirmed pair" = long target against a short acquirer future at a sensible hedge ratio; "probable" = consistent with the trade; "holding only" = the stock was held, intent unknown. Apex, Platinum and RedHex hedges are not visible in our data.',
+      wb: 'The research workbook\'s own IPO ledger, shown as claimed. Checked against exchange anchor letters: 91 of its 94 anchor claims match exactly; the three that do not are flagged. Its "inferred regular book" claims could not be verified.' }[LS.tab];
+    el.textContent = t;
+  });
+  dash.draw('lTable', (el) => {
+    let R = lRows(); if (!R) { failNote(el, 'loading'); return; }
+    const C = lCols();
+    if (LS.q) { const q = LS.q.toLowerCase(); R = R.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(q))); }
+    const sk = LS.sort || { ipo: { k: 'listing_date', d: -1 }, sif: { k: 'ipos_taken_anchor', d: -1 }, merger: { k: '_sifn', d: -1 }, wb: { k: 'listed', d: -1 } }[LS.tab];
+    R.sort((a, b) => { const x = a[sk.k], y = b[sk.k]; const nx = Number.isFinite(x), ny = Number.isFinite(y); if (nx && ny) return (x - y) * sk.d; if (nx !== ny) return nx ? -1 : 1; return String(x || '').localeCompare(String(y || '')) * sk.d; });
+    const tbl = document.createElement('table'), tr0 = tbl.createTHead().insertRow(), tb = tbl.createTBody();
+    for (const c of C) { const th = document.createElement('th'); th.textContent = c.l + (sk.k === c.k ? (sk.d > 0 ? ' ▲' : ' ▼') : ''); if (!c.num) th.className = 'l'; th.onclick = () => { LS.sort = { k: c.k, d: sk.k === c.k ? -sk.d : (c.num ? -1 : 1) }; dash.draw('lTable'); }; tr0.append(th); }
+    for (const r of R) { const tr = tb.insertRow(); for (const c of C) { const td = tr.insertCell(); const v = r[c.k]; td.className = c.w ? 'w' : (c.num ? 'n' : 'l');
+      if (c.html) td.innerHTML = v || '–'; else td.textContent = c.f ? c.f(v) : (v === undefined || v === '' ? '–' : String(v)); } }
+    const cnt = document.createElement('p'); cnt.className = 'note'; cnt.textContent = R.length + ' rows' + (LS.q ? ' match "' + LS.q + '"' : '') + '. Click a column header to sort.';
+    el.replaceChildren(cnt, tbl);
+  });
   // view switch: #summary shows the family summary; anything else shows the dashboard (redrawn so charts size to the page)
   function setView() {
     if (!root) return;
-    const v = location.hash === '#summary' ? 'summary' : location.hash === '#monthly' ? 'monthly' : '';
+    const v = location.hash === '#summary' ? 'summary' : location.hash === '#monthly' ? 'monthly' : location.hash === '#ledgers' ? 'ledgers' : '';
     const was = root.dataset.view || '';
     if (v) root.dataset.view = v; else delete root.dataset.view;
     if (was === v) return;
@@ -1241,6 +1314,8 @@
     window.scrollTo(0, 0);
   }
   root && root.addEventListener('click', (ev) => {
+    const lt = ev.target.closest('button[data-ltab]');
+    if (lt) { LS.tab = lt.dataset.ltab; LS.sort = null; for (const x of root.querySelectorAll('#l-tab button')) { x.classList.toggle('on', x === lt); x.setAttribute('aria-pressed', x === lt ? 'true' : 'false'); } dash.draw('lNote'); dash.draw('lTable'); return; }
     const b = ev.target.closest('button[data-mscale]');
     if (b) { MS.scale = b.dataset.mscale; for (const x of root.querySelectorAll('#m-scale button')) { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); } dash.draw('mAum'); return; }
     const a = ev.target.closest('a[data-view]'); if (!a) return;
@@ -1248,6 +1323,7 @@
     if (a.dataset.view !== 'dashboard') location.hash = a.dataset.view;
     else history.pushState('', document.title, location.pathname + location.search), setView();
   });
+  const lq = root && root.querySelector('#l-q'); if (lq) { let t = null; lq.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { LS.q = lq.value.trim(); dash.draw('lTable'); }, 200); }); }
   const mm = root && root.querySelector('#m-metric'); if (mm) mm.addEventListener('change', () => { MS.metric = mm.value; dash.draw('mPeers'); });
   window.addEventListener('hashchange', setView);
   setView();

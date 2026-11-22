@@ -50,9 +50,13 @@ def main() -> None:
     src = (DASHSRC / "index.html").read_text()
     src = src.replace('<meta name="dash-one-writer">', "").replace('<link rel="stylesheet" href="fonts.css">', "")
     src = re.sub(r'<script src="sif.js"></script>\s*$', "", src.strip())
-    static = HERE.parent / "data" / "monitor" / "ref" / "monthly_portfolios.csv"   # month-end portfolios from AMC disclosures (static)
-    if static.exists():
-        DATA.mkdir(parents=True, exist_ok=True); shutil.copy(static, DATA / "monthly.csv")
+    # static research datasets kept in ref/ (not rebuilt nightly): month-end portfolios, IPO and merger-arb ledgers
+    REF = HERE.parent / "data" / "monitor" / "ref"
+    for ref_name, data_name in (("monthly_portfolios", "monthly"), ("ipo_master_15m", "ipo_master"), ("ipo_sif_summary", "ipo_summary"),
+                     ("ipo_sif_participation", "ipo_part"), ("merger_arb_opportunities", "merger"), ("merger_arb_sif_positions", "merger_pos"),
+                     ("workbook_ipo_ledger", "ipo_workbook")):
+        if (REF / f"{ref_name}.csv").exists():
+            DATA.mkdir(parents=True, exist_ok=True); shutil.copy(REF / f"{ref_name}.csv", DATA / f"{data_name}.csv")
     files = sorted(p.name for p in DATA.glob("*.csv"))
     dl = "".join(f'<a href="data/{f}" download>{f}</a>' for f in files)
     src = src.replace('<details>\n      <summary>How the data is collected</summary>',

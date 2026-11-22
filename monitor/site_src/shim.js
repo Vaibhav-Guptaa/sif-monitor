@@ -2,7 +2,7 @@
    Provides the four calls sif.js uses (dash.data, dash.draw, dash.calc, dash.colors) so the same page code runs on
    any static host. Datasets are the CSVs in ./data/, loaded once; drawings rerun on resize. */
 (function () {
-  const NAMES = ['funds', 'daily', 'alloc', 'holdings', 'trades', 'aum', 'sources', 'families', 'attrib', 'attrib_top', 'monthly'];
+  const NAMES = ['funds', 'daily', 'alloc', 'holdings', 'trades', 'aum', 'sources', 'families', 'attrib', 'attrib_top', 'monthly', 'ipo_master', 'ipo_summary', 'ipo_part', 'merger', 'merger_pos', 'ipo_workbook'];
   const store = {};          // name -> {status, data}
   const calcs = {};          // name -> {inputs, fn}
   const draws = new Map();   // name -> fn, in registration order

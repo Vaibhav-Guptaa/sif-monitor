@@ -124,7 +124,13 @@
 .sif-viewlink a { font-weight: 600; color: var(--color-accent, #2563eb); text-decoration: none; border: 1px solid var(--color-border-line); border-radius: 999px; padding: 4px 12px; background: var(--color-panel); }
 .sif-viewlink a:hover { border-color: currentColor; }
 .sif > [data-pane] { display: none; }
-.sif[data-view="summary"] > [data-pane="summary"], .sif[data-view="monthly"] > [data-pane="monthly"] { display: grid; }
+.sif[data-view="summary"] > [data-pane="summary"], .sif[data-view="monthly"] > [data-pane="monthly"], .sif[data-view="ledgers"] > [data-pane="ledgers"] { display: grid; }
+.sif [data-pane="ledgers"] td.w { white-space: normal; min-width: 220px; max-width: 420px; text-align: left; line-height: 1.4; }
+.sif [data-pane="ledgers"] th { cursor: pointer; }
+.sif [data-pane="ledgers"] input[type=search] { font: inherit; padding: 6px 10px; border: 1px solid var(--color-border-line); border-radius: 8px; min-width: 240px; }
+.sif [data-pane="ledgers"] .sif-tablewrap { max-height: 70vh; overflow: auto; }
+.sif [data-pane="ledgers"] thead th { position: sticky; top: 0; background: var(--color-panel); z-index: 1; }
+.sif .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 .sif[data-view] > :not(.sif-head):not([data-pane]) { display: none !important; }
 .sif [data-pane="monthly"] h2 { font-size: 15px; margin: 6px 0 0; }
 .sif [data-pane="monthly"] .sif-chart { width: 100%; max-width: none; }
@@ -143,7 +149,7 @@
   <header class="sif-head" id="top">
     <div class="sif-eyebrow">Specialised Investment Funds · daily official NAVs</div>
     <h1>SIF Competitor Monitor</h1>
-    <nav class="sif-viewlink" aria-label="Views"><a href="#summary" data-view="summary">Family summary →</a><a href="#monthly" data-view="monthly">Monthly portfolios →</a></nav>
+    <nav class="sif-viewlink" aria-label="Views"><a href="#summary" data-view="summary">Family summary →</a><a href="#monthly" data-view="monthly">Monthly portfolios →</a><a href="#ledgers" data-view="ledgers">IPO and merger-arb ledgers →</a></nav>
   </header>
 
   <section class="sif-panel" id="famsum" data-pane="summary" aria-labelledby="famsum-h">
@@ -177,6 +183,16 @@
     <h2>Where each rupee sits, decoded stock by stock</h2>
     <div class="sif-chart" data-draw="mStrat" data-source="monthly families"></div>
     <p class="note">Source: AMC month-end portfolio disclosures as extracted into the research workbook (checked: its summary table recomputes exactly from its holdings sheet; totals agree with official AMC files and Groww copies within about 0.2 points where we hold them). Strategies are decoded per stock from its shares, its own futures and its own options with the same classifier as the main dashboard. Market-cap bands use AMFI's Jan–Jun 2026 rank list for every month, so older months are indicative. Month-end snapshots only.</p>
+  </section>
+
+  <section class="sif-panel" id="ledgers" data-pane="ledgers" aria-labelledby="ledgers-h">
+    <header><h2 id="ledgers-h">IPO and merger-arbitrage ledgers</h2><a class="sif-viewlink" href="#" data-view="dashboard" style="text-decoration:none">← Back to dashboard</a></header>
+    <div class="sif-controls"><span class="sif-seg" id="l-tab" role="group" aria-label="Ledger">
+      <button type="button" data-ltab="ipo" class="on" aria-pressed="true">IPOs, last 15 months</button><button type="button" data-ltab="sif">IPO calls by SIF strategy</button>
+      <button type="button" data-ltab="merger">Merger arb and special situations</button><button type="button" data-ltab="wb">Workbook IPO ledger (unverified)</button></span>
+      <input type="search" id="l-q" placeholder="Filter rows (company, fund, status…)" aria-label="Filter rows"></div>
+    <p class="note" data-draw="lNote" data-source="ipo_master ipo_summary merger merger_pos ipo_workbook">—</p>
+    <div class="sif-tablewrap" data-draw="lTable" data-source="ipo_master ipo_summary merger merger_pos ipo_workbook"></div>
   </section>
 
   <section class="sif-panel" id="timeseries">
