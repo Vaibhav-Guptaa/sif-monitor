@@ -1182,6 +1182,32 @@
       for (const p of it.pts) if (Number.isFinite(p.v) && (!opt.log || p.v > 0)) svg.append('circle').attr('data-s', si).attr('cx', monthly ? xs(p.m) : xs(p.date)).attr('cy', y(p.v)).attr('r', 2.8).style('fill', it.c)
         .on('pointerenter pointermove', (ev) => { tip.attr('hidden', null).html(''); tip.append('div').text(it.name).style('font-weight', 600); const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(p.m ? fmtMon(parseDate(p.m + '-01')) : fmtMon(p.date)); a1.append('span').text((opt.fmt || f1)(p.v)); const [px, py] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', (py + 12) + 'px'); })
         .on('pointerleave', () => { tip.attr('hidden', ''); focus(null); }).on('pointerenter.f', () => focus(si)); });
+    if (monthly) {
+      // one combined hover: guide at the nearest month-end, every series listed highest first, the line nearest the cursor highlighted
+      const guide = svg.append('line').attr('y1', m.t).attr('y2', H - m.b).style('stroke', '#94a3b8').style('stroke-dasharray', '3 3').style('display', 'none').style('pointer-events', 'none');
+      svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', Math.max(0, W - m.l - m.r)).attr('height', H - m.t - m.b).style('fill', 'transparent')
+        .on('pointermove', (ev) => {
+          const [px, py] = d3.pointer(ev, svg.node());
+          const mk = MK.reduce((a, b) => (Math.abs(xs(b) - px) < Math.abs(xs(a) - px) ? b : a));
+          const rowsAt = items.map((it, si) => { const q = it.pts.find((z) => z.m === mk); return q && Number.isFinite(q.v) ? { it, si, v: q.v } : null; }).filter(Boolean).sort((a, b) => b.v - a.v);
+          guide.attr('x1', xs(mk)).attr('x2', xs(mk)).style('display', null);
+          const near = rowsAt.length ? rowsAt.reduce((a, b) => (Math.abs(y(b.v) - py) < Math.abs(y(a.v) - py) ? b : a)) : null;
+          focus(near ? near.si : null);
+          tip.attr('hidden', null).html('');
+          tip.append('div').text(fmtMon(parseDate(mk + '-01')) + (rowsAt.length > 1 ? ' · highest first' : '')).style('font-weight', 600);
+          for (const r of rowsAt) {
+            const d = tip.append('div').attr('class', 'row'); const nm = d.append('span');
+            nm.append('i').style('display', 'inline-block').style('width', '9px').style('height', '9px').style('border-radius', '2px').style('margin-right', '6px').style('background', r.it.c);
+            nm.append('span').text(r.it.name); d.append('span').text((opt.fmt || f1)(r.v));
+            if (near && r.si === near.si) d.style('font-weight', 700);
+          }
+          if (!rowsAt.length) tip.append('div').text('No data this month').style('color', 'var(--color-fg-muted)');
+          const [ex, ey] = d3.pointer(ev, el); const tw = tip.node().offsetWidth, th = tip.node().offsetHeight;
+          const left = ex + 16 + tw > el.clientWidth ? ex - tw - 16 : ex + 16;
+          tip.style('left', Math.max(0, left) + 'px').style('top', Math.max(0, Math.min(ey - th / 2, H - th)) + 'px');
+        })
+        .on('pointerleave', () => { tip.attr('hidden', ''); guide.style('display', 'none'); focus(null); });
+    }
     if (wide) {
       const ends = items.map((it) => { const p = [...it.pts].reverse().find((q) => Number.isFinite(q.v) && (!opt.log || q.v > 0)); return p ? { it, y: y(p.v) } : null; }).filter(Boolean).sort((a, b) => a.y - b.y);
       for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 12) ends[i].y = ends[i - 1].y + 12;
