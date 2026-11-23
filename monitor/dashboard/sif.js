@@ -1110,10 +1110,10 @@
     el.replaceChildren(tbl);
   });
   // ---------- Monthly portfolios (view #monthly): AMC month-end disclosures from the research workbook ----------
-  const MS = { fund: null, scale: 'log', metric: 'fi' };
+  const MS = { fund: null, scale: 'log', metric: 'fi', layout: 'panels' };
   const mrows = () => {
     const d = rows('monthly'); if (!d) return null; if (cache.has(d)) return cache.get(d);
-    const o = d.map((r) => { const q = { ...r }; for (const k of Object.keys(r)) if (!['fund', 'month', 'asof', 'opt_note'].includes(k)) q[k] = num(r[k]); q.date = parseDate(String(r.asof).slice(0, 10)) || parseDate(r.month + '-01'); q.fi = q.tbills + q.mm_other + q.corp_debt + q.gsec + q.treps_cash; q.calls = q.s_calls + q.s_both + q.s_untyped; return q; });
+    const o = d.map((r) => { const q = { ...r }; for (const k of Object.keys(r)) if (!['fund', 'month', 'asof', 'opt_note'].includes(k)) q[k] = num(r[k]); q.date = parseDate(String(r.asof).slice(0, 10)) || parseDate(r.month + '-01'); q.fi = q.tbills + q.mm_other + q.corp_debt + q.gsec + q.treps_cash; q.sov = q.tbills + q.gsec; q.calls = q.s_calls + q.s_both + q.s_untyped; return q; });
     cache.set(d, o); return o;
   };
   const mfunds = () => { const R = mrows(); return R ? d3.groups(R, (r) => r.fund).map(([f, a]) => { a.sort((x, y) => x.date - y.date); return { f, a, last: a[a.length - 1] }; }).sort((x, y) => y.last.aum_cr - x.last.aum_cr) : []; };
@@ -1159,17 +1159,21 @@
     const H = opt.h || 320; const { svg, tip, W } = chartFrame(el, H);
     const wide = W > 520; const m = { t: 12, r: wide ? 128 : 10, b: 28, l: 46 };
     const all = items.flatMap((it) => it.pts); if (!all.length) { failNote(el, 'ok'); return; }
-    const x = d3.scaleTime().domain(d3.extent(all, (p) => p.date)).range([m.l, W - m.r]);
+    const monthly = all.every((p) => p.m);
+    const MK = monthly ? [...new Set(all.map((p) => p.m))].sort() : null;
+    const xs = monthly ? d3.scalePoint().domain(MK).range([m.l, W - m.r]).padding(0.3) : d3.scaleTime().domain(d3.extent(all, (p) => p.date)).range([m.l, W - m.r]);
+    const x = (d) => (monthly ? xs(d.m) : xs(d));
     const vals = all.map((p) => p.v).filter((v) => Number.isFinite(v) && (!opt.log || v > 0));
     const y = (opt.log ? d3.scaleLog().domain([d3.min(vals) * 0.8, d3.max(vals) * 1.15]) : d3.scaleLinear().domain([Math.min(0, d3.min(vals)), d3.max(vals) * 1.08]).nice()).range([H - m.b, m.t]);
     const ax = d3.axisLeft(y).ticks(opt.log ? 5 : 6, opt.log ? d3.format(',.0f') : undefined);
     svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r)).tickFormat(''));
     svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(ax);
-    svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(W < 520 ? 4 : 8).tickFormat(fmtMon));
-    const ln = d3.line().defined((p) => Number.isFinite(p.v) && (!opt.log || p.v > 0)).x((p) => x(p.date)).y((p) => y(p.v));
+    if (monthly) { const step = W < 520 ? 3 : 1; svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(xs).tickValues(MK.filter((k, i) => i % step === 0 || i === MK.length - 1)).tickFormat((k) => fmtMon(parseDate(k + '-01'))).tickSizeOuter(0)); }
+    else svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(xs).ticks(W < 520 ? 4 : 8).tickFormat(fmtMon));
+    const ln = d3.line().defined((p) => Number.isFinite(p.v) && (!opt.log || p.v > 0)).x((p) => (monthly ? xs(p.m) : xs(p.date))).y((p) => y(p.v));
     for (const it of items) { svg.append('path').attr('d', ln(it.pts)).style('fill', 'none').style('stroke', it.c).style('stroke-width', it.w || 2).style('stroke-dasharray', it.dash || null);
-      for (const p of it.pts) if (Number.isFinite(p.v) && (!opt.log || p.v > 0)) svg.append('circle').attr('cx', x(p.date)).attr('cy', y(p.v)).attr('r', 2.6).style('fill', it.c)
-        .on('pointerenter pointermove', (ev) => { tip.attr('hidden', null).html(''); tip.append('div').text(it.name).style('font-weight', 600); const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(fmtMon(p.date)); a1.append('span').text((opt.fmt || f1)(p.v)); const [px, py] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', (py + 12) + 'px'); })
+      for (const p of it.pts) if (Number.isFinite(p.v) && (!opt.log || p.v > 0)) svg.append('circle').attr('cx', monthly ? xs(p.m) : xs(p.date)).attr('cy', y(p.v)).attr('r', 2.6).style('fill', it.c)
+        .on('pointerenter pointermove', (ev) => { tip.attr('hidden', null).html(''); tip.append('div').text(it.name).style('font-weight', 600); const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(p.m ? fmtMon(parseDate(p.m + '-01')) : fmtMon(p.date)); a1.append('span').text((opt.fmt || f1)(p.v)); const [px, py] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', (py + 12) + 'px'); })
         .on('pointerleave', () => tip.attr('hidden', '')); }
     if (wide) {
       const ends = items.map((it) => { const p = [...it.pts].reverse().find((q) => Number.isFinite(q.v) && (!opt.log || q.v > 0)); return p ? { it, y: y(p.v) } : null; }).filter(Boolean).sort((a, b) => a.y - b.y);
@@ -1184,12 +1188,41 @@
   });
   dash.draw('mAum', (el) => {
     const F = mfunds(); if (!F.length) { failNote(el, dash.data('monthly').status); return; }
-    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.map((r) => ({ date: r.date, v: r.aum_cr })) })), { log: MS.scale === 'log', fmt: (v) => '₹' + f0(v) + ' cr', h: 360 });
+    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.map((r) => ({ date: r.date, m: r.month, v: r.aum_cr })) })), { log: MS.scale === 'log', fmt: (v) => '₹' + f0(v) + ' cr', h: 360 });
   });
+  const MLABEL = { fi: 'Fixed income', tb: 'T-bills and G-secs', eq: 'Net equity', calls: 'Stocks with options written', arb: 'Arbitrage book', nl: 'Net non-large cap' };
+  function drawPanels(el, F, key, needDeriv) {
+    el.replaceChildren();
+    const W0 = el.clientWidth || 900, cols = W0 > 1000 ? 4 : W0 > 700 ? 3 : W0 > 460 ? 2 : 1;
+    const grid = document.createElement('div'); grid.style.cssText = `display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:14px 18px`;
+    el.append(grid);
+    const MK = [...new Set(F.flatMap((g) => g.a.map((r) => r.month)))].sort();
+    const vals = F.flatMap((g) => g.a.filter((r) => !needDeriv || r.deriv_ok === 1).map((r) => r[key])).filter(Number.isFinite);
+    const lo = Math.min(0, d3.min(vals) || 0), hi = Math.max(10, Math.ceil((d3.max(vals) || 10) / 10) * 10);
+    for (const g of F) {
+      const A = g.a.filter((r) => !needDeriv || r.deriv_ok === 1);
+      const cell = document.createElement('div'); cell.style.minWidth = '0';
+      const h = document.createElement('div'); h.style.cssText = 'font-size:12.5px;font-weight:600;margin-bottom:2px';
+      const last = A.length ? A[A.length - 1] : null;
+      h.textContent = mname(g.f) + (last ? ' · latest ' + f0(last[key]) + '% (' + fmtMon(last.date) + ')' : ' · not available');
+      cell.append(h); grid.append(cell);
+      const box = document.createElement('div'); cell.append(box);
+      const W = Math.max(200, (W0 - 18 * (cols - 1)) / cols), H = 170, m = { t: 8, r: 22, b: 22, l: 30 };
+      const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', g.f + ' ' + MLABEL[MS.metric]);
+      if (!A.length) { svg.append('text').attr('x', W / 2).attr('y', H / 2).attr('text-anchor', 'middle').text('No futures or options captured').style('fill', 'var(--color-fg-muted)').style('font-size', '11px'); continue; }
+      const x = d3.scalePoint().domain(MK).range([m.l, W - m.r]).padding(0.3), y = d3.scaleLinear().domain([lo, hi]).range([H - m.b, m.t]);
+      svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)).tickFormat(''));
+      svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4));
+      svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickValues(MK.filter((k) => /-(01|04|07|10)$/.test(k))).tickFormat((k) => fmtMon(parseDate(k + '-01'))).tickSizeOuter(0));
+      svg.append('path').attr('d', d3.line().x((r) => x(r.month)).y((r) => y(r[key]))(A)).style('fill', 'none').style('stroke', '#2563eb').style('stroke-width', 2);
+      for (const r of A) svg.append('circle').attr('cx', x(r.month)).attr('cy', y(r[key])).attr('r', 3).style('fill', '#2563eb').append('title').text(fmtMon(r.date) + ': ' + f1(r[key]) + '% · AUM ₹' + f0(r.aum_cr) + ' cr');
+    }
+  }
   dash.draw('mPeers', (el) => {
     const F = mfunds(); if (!F.length) { failNote(el, dash.data('monthly').status); return; }
-    const M = { fi: ['fi', false], tb: ['tbills', false], eq: ['net_equity', true], calls: ['calls', true], arb: ['s_arb', true], nl: ['net_nonlarge', true] }[MS.metric];
-    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.filter((r) => !M[1] || r.deriv_ok === 1).map((r) => ({ date: r.date, v: r[M[0]] })) })).filter((it) => it.pts.length), { fmt: (v) => f1(v) + '%', h: 340 });
+    const M = { fi: ['fi', false], tb: ['sov', false], eq: ['net_equity', true], calls: ['calls', true], arb: ['s_arb', true], nl: ['net_nonlarge', true] }[MS.metric];
+    if (MS.layout !== 'together') { drawPanels(el, F, M[0], M[1]); return; }
+    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.filter((r) => !M[1] || r.deriv_ok === 1).map((r) => ({ date: r.date, m: r.month, v: r[M[0]] })) })).filter((it) => it.pts.length), { fmt: (v) => f1(v) + '%', h: 340 });
   });
   const curFund = () => { const F = mfunds(); if (!F.length) return null; return F.find((g) => g.f === MS.fund) || F[0]; };
   dash.draw('mFundSel', (el) => {
@@ -1207,8 +1240,8 @@
   });
   dash.draw('mCash', (el) => {
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
-    drawStack(el, g.a, [{ l: 'Cash, TREPS, receivables', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }, { l: 'T-bills', c: MCOL.tb, f: (r) => r.tbills }, { l: 'Other money market', c: MCOL.mm, dark: true, f: (r) => r.mm_other },
-      { l: 'G-secs', c: MCOL.gsec, f: (r) => r.gsec }, { l: 'Corporate bonds and other debt', c: MCOL.corp, f: (r) => r.corp_debt }], { total: true });
+    drawStack(el, g.a, [{ l: 'Corporate bonds and other debt', c: MCOL.corp, f: (r) => r.corp_debt }, { l: 'T-bills and G-secs (sovereign)', c: MCOL.tb, f: (r) => r.tbills + r.gsec },
+      { l: 'Other money market (CP, CD)', c: MCOL.mm, dark: true, f: (r) => r.mm_other }, { l: 'Cash, TREPS, receivables', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }], { total: true });
   });
   dash.draw('mCap', (el) => {
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
@@ -1218,15 +1251,15 @@
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
     const A = g.a.filter((r) => r.deriv_ok === 1);
     if (!A.length) { el.replaceChildren(); const p = document.createElement('p'); p.className = 'note'; p.textContent = 'Not shown: futures were not captured for this fund, so net exposure cannot be computed.'; el.append(p); return; }
-    drawLines(el, [{ name: 'Net large cap', c: MCOL.large, pts: A.map((r) => ({ date: r.date, v: r.net_large })) }, { name: 'Net non-large cap', c: MCOL.small, pts: A.map((r) => ({ date: r.date, v: r.net_nonlarge })) },
-      { name: 'Total net equity', c: '#111827', dash: '5 4', pts: A.map((r) => ({ date: r.date, v: r.net_equity })) }, { name: 'Arbitrage book', c: MCOL.arb, w: 1.4, pts: A.map((r) => ({ date: r.date, v: r.s_arb })) }], { fmt: (v) => f1(v) + '%', h: 300 });
+    drawLines(el, [{ name: 'Net large cap', c: MCOL.large, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_large })) }, { name: 'Net non-large cap', c: MCOL.small, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_nonlarge })) },
+      { name: 'Total net equity', c: '#111827', dash: '5 4', pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_equity })) }, { name: 'Arbitrage book', c: MCOL.arb, w: 1.4, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.s_arb })) }], { fmt: (v) => f1(v) + '%', h: 300 });
   });
   dash.draw('mStrat', (el) => {
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
     const S1 = [{ l: 'Arbitrage (stock + short future)', c: MCOL.arb, f: (r) => r.s_arb }, { l: 'Covered call (calls written on held stock)', c: MCOL.calls, f: (r) => r.s_calls },
       { l: 'Calls and puts written / collar / protective put', c: MCOL.both, f: (r) => r.s_both }, { l: 'Options written, type not disclosed', c: MCOL.untyped, dark: true, f: (r) => r.s_untyped },
-      { l: 'Plain stock, no hedge', c: MCOL.plain, f: (r) => r.s_plain }, { l: 'IPO / new listing', c: MCOL.ipo, dark: true, f: (r) => r.s_ipo }, { l: 'T-bills', c: MCOL.tb, f: (r) => r.tbills },
-      { l: 'Other money market', c: MCOL.mm, dark: true, f: (r) => r.mm_other }, { l: 'Corporate bonds and G-secs', c: MCOL.corp, f: (r) => r.corp_debt + r.gsec }, { l: 'Cash and TREPS', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }, { l: 'REITs / InvITs', c: MCOL.reit, f: (r) => r.reit }];
+      { l: 'Plain stock, no hedge', c: MCOL.plain, f: (r) => r.s_plain }, { l: 'IPO / new listing', c: MCOL.ipo, dark: true, f: (r) => r.s_ipo }, { l: 'Corporate bonds and other debt', c: MCOL.corp, f: (r) => r.corp_debt }, { l: 'T-bills and G-secs', c: MCOL.tb, f: (r) => r.tbills + r.gsec },
+      { l: 'Other money market', c: MCOL.mm, dark: true, f: (r) => r.mm_other }, { l: 'Cash and TREPS', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }, { l: 'Units of other funds', c: '#a3e635', dark: true, f: (r) => r.units || 0 }, { l: 'REITs / InvITs', c: MCOL.reit, f: (r) => r.reit }];
     drawStack(el, g.a, S1, { h: 380, ymax: 100 });
   });
   // ---------- Ledgers (view #ledgers): IPOs, SIF IPO calls, merger arbitrage, workbook IPO ledger ----------
@@ -1316,6 +1349,8 @@
   root && root.addEventListener('click', (ev) => {
     const lt = ev.target.closest('button[data-ltab]');
     if (lt) { LS.tab = lt.dataset.ltab; LS.sort = null; for (const x of root.querySelectorAll('#l-tab button')) { x.classList.toggle('on', x === lt); x.setAttribute('aria-pressed', x === lt ? 'true' : 'false'); } dash.draw('lNote'); dash.draw('lTable'); return; }
+    const ml = ev.target.closest('button[data-mlayout]');
+    if (ml) { MS.layout = ml.dataset.mlayout; for (const x of root.querySelectorAll('#m-layout button')) { x.classList.toggle('on', x === ml); x.setAttribute('aria-pressed', x === ml ? 'true' : 'false'); } dash.draw('mPeers'); return; }
     const b = ev.target.closest('button[data-mscale]');
     if (b) { MS.scale = b.dataset.mscale; for (const x of root.querySelectorAll('#m-scale button')) { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); } dash.draw('mAum'); return; }
     const a = ev.target.closest('a[data-view]'); if (!a) return;

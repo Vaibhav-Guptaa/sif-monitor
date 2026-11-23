@@ -134,6 +134,8 @@
 .sif[data-view] > :not(.sif-head):not([data-pane]) { display: none !important; }
 .sif [data-pane="monthly"] h2 { font-size: 15px; margin: 6px 0 0; }
 .sif [data-pane="monthly"] .sif-chart { width: 100%; max-width: none; }
+.sif [data-pane="monthly"] select, .sif [data-pane="ledgers"] select { max-width: 100%; min-width: 0; }
+.sif [data-pane="monthly"] .sif-controls label { max-width: 100%; min-width: 0; }
 .sif [data-draw="famsum"] table { min-width: 820px; }
 .sif [data-draw="famsum"] th { white-space: normal; max-width: 92px; line-height: 1.25; }
 .sif [data-draw="famsum"] td { vertical-align: top; }
@@ -166,15 +168,16 @@
     <h2>AUM at each month-end, all hybrid long-short funds</h2>
     <div class="sif-controls"><span class="sif-seg" id="m-scale" role="group" aria-label="Scale"><button type="button" data-mscale="log" class="on" aria-pressed="true">Log scale</button><button type="button" data-mscale="linear">Linear</button></span></div>
     <div class="sif-chart" data-draw="mAum" data-source="monthly families"></div>
-    <h2>Compare funds on one measure</h2>
+    <h2>Compare funds on one measure (same scale in every panel)</h2>
     <div class="sif-controls"><label for="m-metric">Measure <select class="dash-select" id="m-metric" aria-label="Measure">
-      <option value="fi">Debt + money market + cash, % of NAV</option><option value="tb">T-bills, % of NAV</option><option value="eq">Net equity (shares + futures), % of NAV</option>
-      <option value="calls">Stocks with options written on them, % of NAV</option><option value="arb">Arbitrage book (stock + short future), % of NAV</option><option value="nl">Net non-large-cap exposure, % of NAV</option></select></label></div>
+      <option value="fi">Fixed income (debt + T-bills/G-secs + money market + cash), % of NAV</option><option value="tb">T-bills and G-secs (sovereign), % of NAV</option><option value="eq">Net equity (shares + futures), % of NAV</option>
+      <option value="calls">Stocks with options written on them, % of NAV</option><option value="arb">Arbitrage book (stock + short future), % of NAV</option><option value="nl">Net non-large-cap exposure, % of NAV</option></select></label>
+      <span class="sif-seg" id="m-layout" role="group" aria-label="Layout"><button type="button" data-mlayout="panels" class="on" aria-pressed="true">One panel per fund</button><button type="button" data-mlayout="together">All on one chart</button></span></div>
     <div class="sif-chart sm" data-draw="mPeers" data-source="monthly families"></div>
     <h2>One fund in detail</h2>
     <div class="sif-controls"><label for="m-fund">Fund <select class="dash-select" id="m-fund" aria-label="Fund" data-draw="mFundSel" data-source="monthly families"></select></label></div>
     <p class="note" data-draw="mFundNote" data-source="monthly families">—</p>
-    <h2>Cash, T-bills and debt, % of NAV (bold = total)</h2>
+    <h2>Fixed income, % of NAV (bold = total): corporate debt, T-bills and G-secs, money market, cash</h2>
     <div class="sif-chart sm" data-draw="mCash" data-source="monthly families"></div>
     <h2>Long stock by market-cap band, % of NAV</h2>
     <div class="sif-chart sm" data-draw="mCap" data-source="monthly families"></div>
