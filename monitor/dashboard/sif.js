@@ -1161,7 +1161,7 @@
   // lines over time, labelled at the right end (labels pushed apart so they stay readable)
   function drawLines(el, items, opt = {}) {
     const H = opt.h || 320; const { svg, tip, W } = chartFrame(el, H);
-    const wide = W > 520; const m = { t: 12, r: wide ? 128 : 10, b: 28, l: 46 };
+    const wide = W > 520; const m = { t: 12, r: wide ? 172 : 10, b: 28, l: 46 };
     const all = items.flatMap((it) => it.pts); if (!all.length) { failNote(el, 'ok'); return; }
     const monthly = all.every((p) => p.m);
     const MK = monthly ? [...new Set(all.map((p) => p.m))].sort() : null;
@@ -1174,15 +1174,19 @@
     svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(ax);
     if (monthly) { const step = W < 520 ? 3 : 1; svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(xs).tickValues(MK.filter((k, i) => i % step === 0 || i === MK.length - 1)).tickFormat((k) => fmtMon(parseDate(k + '-01'))).tickSizeOuter(0)); }
     else svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(xs).ticks(W < 520 ? 4 : 8).tickFormat(fmtMon));
-    const ln = d3.line().defined((p) => Number.isFinite(p.v) && (!opt.log || p.v > 0)).x((p) => (monthly ? xs(p.m) : xs(p.date))).y((p) => y(p.v));
-    for (const it of items) { svg.append('path').attr('d', ln(it.pts)).style('fill', 'none').style('stroke', it.c).style('stroke-width', it.w || 2).style('stroke-dasharray', it.dash || null);
-      for (const p of it.pts) if (Number.isFinite(p.v) && (!opt.log || p.v > 0)) svg.append('circle').attr('cx', monthly ? xs(p.m) : xs(p.date)).attr('cy', y(p.v)).attr('r', 2.6).style('fill', it.c)
+    // smooth monotone curves (no overshoot between month-ends); hovering a line or its label highlights that series
+    const ln = d3.line().curve(d3.curveMonotoneX).defined((p) => Number.isFinite(p.v) && (!opt.log || p.v > 0)).x((p) => (monthly ? xs(p.m) : xs(p.date))).y((p) => y(p.v));
+    const focus = (i) => svg.selectAll('[data-s]').style('opacity', function () { return i === null || +this.getAttribute('data-s') === i ? 1 : 0.12; });
+    items.forEach((it, si) => { svg.append('path').attr('data-s', si).attr('d', ln(it.pts)).style('fill', 'none').style('stroke', it.c).style('stroke-width', it.w || 2.2).style('stroke-dasharray', it.dash || null).style('stroke-linecap', 'round')
+        .on('pointerenter', () => focus(si)).on('pointerleave', () => focus(null));
+      for (const p of it.pts) if (Number.isFinite(p.v) && (!opt.log || p.v > 0)) svg.append('circle').attr('data-s', si).attr('cx', monthly ? xs(p.m) : xs(p.date)).attr('cy', y(p.v)).attr('r', 2.8).style('fill', it.c)
         .on('pointerenter pointermove', (ev) => { tip.attr('hidden', null).html(''); tip.append('div').text(it.name).style('font-weight', 600); const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(p.m ? fmtMon(parseDate(p.m + '-01')) : fmtMon(p.date)); a1.append('span').text((opt.fmt || f1)(p.v)); const [px, py] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', (py + 12) + 'px'); })
-        .on('pointerleave', () => tip.attr('hidden', '')); }
+        .on('pointerleave', () => { tip.attr('hidden', ''); focus(null); }).on('pointerenter.f', () => focus(si)); });
     if (wide) {
       const ends = items.map((it) => { const p = [...it.pts].reverse().find((q) => Number.isFinite(q.v) && (!opt.log || q.v > 0)); return p ? { it, y: y(p.v) } : null; }).filter(Boolean).sort((a, b) => a.y - b.y);
       for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 12) ends[i].y = ends[i - 1].y + 12;
-      for (const e of ends) svg.append('text').attr('x', W - m.r + 6).attr('y', e.y).attr('dy', '0.32em').text(e.it.name).style('fill', e.it.c).style('font-size', '11px').style('font-weight', 600);
+      for (const e of ends) svg.append('text').attr('data-s', items.indexOf(e.it)).attr('x', W - m.r + 6).attr('y', e.y).attr('dy', '0.32em').text(e.it.name).style('fill', e.it.c).style('font-size', '11px').style('font-weight', 600).style('cursor', 'default')
+        .on('pointerenter', () => focus(items.indexOf(e.it))).on('pointerleave', () => focus(null));
     }
   }
   dash.draw('mNote', (el) => {
@@ -1218,7 +1222,7 @@
       svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)).tickFormat(''));
       svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4));
       svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickValues(MK.filter((k) => /-(01|04|07|10)$/.test(k))).tickFormat((k) => fmtMon(parseDate(k + '-01'))).tickSizeOuter(0));
-      svg.append('path').attr('d', d3.line().x((r) => x(r.month)).y((r) => y(r[key]))(A)).style('fill', 'none').style('stroke', '#2563eb').style('stroke-width', 2);
+      svg.append('path').attr('d', d3.line().curve(d3.curveMonotoneX).x((r) => x(r.month)).y((r) => y(r[key]))(A)).style('fill', 'none').style('stroke', '#2563eb').style('stroke-width', 2);
       for (const r of A) svg.append('circle').attr('cx', x(r.month)).attr('cy', y(r[key])).attr('r', 3).style('fill', '#2563eb').append('title').text(fmtMon(r.date) + ': ' + f1(r[key]) + '% · AUM ₹' + f0(r.aum_cr) + ' cr');
     }
   }
