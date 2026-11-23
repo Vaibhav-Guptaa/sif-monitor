@@ -151,7 +151,7 @@ def listed_on(name: str) -> str:
 
 def _ipo_master():
     """Verified IPO/InvIT/REIT universe from exchange anchor letters and Chittorgarh (ref/ipo_master_15m.csv):
-    ISIN -> listing date, normalised company name -> listing date, and the first listing date it covers."""
+    Index allotment and listing dates by ISIN and normalised company name."""
     import csv
     f = ROOT / "data" / "monitor" / "ref" / "ipo_master_15m.csv"
     by_isin, by_name, start = {}, {}, ""
@@ -160,9 +160,12 @@ def _ipo_master():
             d = (r.get("listing_date") or "")[:10]
             if not d[:4].isdigit():
                 continue
+            allotment = (r.get("allotment_date") or "")[:10]
+            first_holdable = allotment if allotment[:4].isdigit() and allotment <= d else d
+            dates = (first_holdable, d)
             if r.get("isin"):
-                by_isin[r["isin"].strip()] = d
-            by_name[norm(r.get("company") or "")] = d
+                by_isin[r["isin"].strip()] = dates
+            by_name[norm(r.get("company") or "")] = dates
             start = min(start, d) if start else d
     return by_isin, by_name, start
 
@@ -170,8 +173,8 @@ def _ipo_master():
 IPO_ISIN, IPO_NAME, IPO_FROM = _ipo_master()
 
 
-def ipo_listing(name: str, isin: str = "") -> str:
-    """Listing date if the stock is in the verified IPO universe (by ISIN, then by name), else ''."""
+def ipo_dates(name: str, isin: str = "") -> tuple[str, str] | None:
+    """First holdable date and listing date for a verified issue."""
     if isin and isin in IPO_ISIN:
         return IPO_ISIN[isin]
     n = norm(name)
@@ -180,20 +183,22 @@ def ipo_listing(name: str, isin: str = "") -> str:
     for k, d in IPO_NAME.items():
         if n and k and (k.startswith(n + " ") or n.startswith(k + " ")) and len(min(k, n, key=len)) >= 6:
             return d
-    return ""
+    return None
 
 
 def is_ipo(name: str, asof: str, isin: str = "") -> bool:
-    """IPO-related: a public issue (IPO, InvIT or REIT) listed within the 12 months before the portfolio date.
-    Uses the verified IPO universe first, so demerger spin-offs and relistings no longer count. For listings
-    before that universe starts, falls back to the first trading day on record."""
+    """A verified public issue held from allotment through one year after listing.
+
+    For earlier issues outside the verified universe, use the first trading day on record.
+    """
     if not asof:
         return False
     from datetime import date, timedelta
     cut = (date.fromisoformat(asof) - timedelta(days=365)).isoformat()
-    d = ipo_listing(name, isin)
-    if d:
-        return cut <= d <= asof
+    dates = ipo_dates(name, isin)
+    if dates:
+        allotment, listing = dates
+        return allotment <= asof and cut <= listing
     d = listed_on(name)
     if not d or not d[:4].isdigit():
         return False
