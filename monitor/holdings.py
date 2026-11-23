@@ -149,13 +149,56 @@ def listed_on(name: str) -> str:
     return LISTED.get(NAME_SYM.get(name, ""), "")
 
 
-def is_ipo(name: str, asof: str) -> bool:
-    """IPO-related: first traded within the 12 months before the portfolio date (anchor lock-in and listing gains)."""
-    d = listed_on(name)
-    if not d or not d[:4].isdigit() or not asof:
+def _ipo_master():
+    """Verified IPO/InvIT/REIT universe from exchange anchor letters and Chittorgarh (ref/ipo_master_15m.csv):
+    ISIN -> listing date, normalised company name -> listing date, and the first listing date it covers."""
+    import csv
+    f = ROOT / "data" / "monitor" / "ref" / "ipo_master_15m.csv"
+    by_isin, by_name, start = {}, {}, ""
+    if f.exists():
+        for r in csv.DictReader(f.open()):
+            d = (r.get("listing_date") or "")[:10]
+            if not d[:4].isdigit():
+                continue
+            if r.get("isin"):
+                by_isin[r["isin"].strip()] = d
+            by_name[norm(r.get("company") or "")] = d
+            start = min(start, d) if start else d
+    return by_isin, by_name, start
+
+
+IPO_ISIN, IPO_NAME, IPO_FROM = _ipo_master()
+
+
+def ipo_listing(name: str, isin: str = "") -> str:
+    """Listing date if the stock is in the verified IPO universe (by ISIN, then by name), else ''."""
+    if isin and isin in IPO_ISIN:
+        return IPO_ISIN[isin]
+    n = norm(name)
+    if n in IPO_NAME:
+        return IPO_NAME[n]
+    for k, d in IPO_NAME.items():
+        if n and k and (k.startswith(n + " ") or n.startswith(k + " ")) and len(min(k, n, key=len)) >= 6:
+            return d
+    return ""
+
+
+def is_ipo(name: str, asof: str, isin: str = "") -> bool:
+    """IPO-related: a public issue (IPO, InvIT or REIT) listed within the 12 months before the portfolio date.
+    Uses the verified IPO universe first, so demerger spin-offs and relistings no longer count. For listings
+    before that universe starts, falls back to the first trading day on record."""
+    if not asof:
         return False
     from datetime import date, timedelta
-    return d >= (date.fromisoformat(asof) - timedelta(days=365)).isoformat()
+    cut = (date.fromisoformat(asof) - timedelta(days=365)).isoformat()
+    d = ipo_listing(name, isin)
+    if d:
+        return cut <= d <= asof
+    d = listed_on(name)
+    if not d or not d[:4].isdigit():
+        return False
+    # first-trade fallback only for listings older than the verified universe (spin-offs inside it are excluded)
+    return cut <= d <= asof and (not IPO_FROM or d < IPO_FROM)
 
 
 def cap_by_name(name: str):
@@ -494,17 +537,19 @@ def summarise(p: dict) -> tuple[dict, list[dict]]:
             side = "w" if l["pct"] < 0 else "b"
             pos[ukey(l["under"])][(t.lower() if t != "u" else "u") + side] += l["pct"]
     eqw = defaultdict(float)
-    eqname = {}
+    eqname, eqisin = {}, {}
     for l in eq:
         eqw[ukey(l["name"])] += l["pct"]
         eqname.setdefault(ukey(l["name"]), l["name"])
+        if l.get("isin"):
+            eqisin.setdefault(ukey(l["name"]), l["isin"])
     st = defaultdict(float)
     for k, wk in eqw.items():
         q = pos.get(k, {})
         arb = max(min(wk, -q.get("fs", 0.0)), 0.0)
         st["arb"] += arb
         r = wk - arb
-        if is_ipo(eqname.get(k, ""), p.get("asof") or ""):
+        if is_ipo(eqname.get(k, ""), p.get("asof") or "", eqisin.get(k, "")):
             st["ipo"] += r             # IPO / new listing, the part not held against a future
             st["n_ipo"] += 1
             st["ipo_total"] += wk
@@ -655,7 +700,7 @@ def main() -> None:
                                       isin=l["isin"], industry=l["ind"], kind=l["kind"], opt=l["opt"], underlying=l["under"],
                                       band=l.get("band", ""), qty=l["qty"], mv_lakh=l["mv_lakh"], pct=round(l["pct"], 4),
                                       listed=listed_on(l["name"]) if l["kind"] == "EQ" else "",
-                                      ipo=is_ipo(l["name"], latest["asof"]) if l["kind"] == "EQ" else False))
+                                      ipo=is_ipo(l["name"], latest["asof"], l.get("isin") or "") if l["kind"] == "EQ" else False))
         off = [p for p in ports if p["source"] == "official"]
         for a, b in zip(off, off[1:]):
             for t in trades(a, b):

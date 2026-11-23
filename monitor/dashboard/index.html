@@ -237,19 +237,19 @@
         <p class="note" id="ts-period">—</p>
         <div class="sif-tablewrap">
           <table id="ts-stats-table">
-            <thead><tr><th>Line</th><th title="Compound annual growth rate over the period">CAGR %</th><th title="Return for the period, %">Ret % period</th><th title="Volatility, % a year">Vol %</th><th title="Sharpe ratio, risk-free 5%">Sharpe</th><th title="Worst drawdown in the period, %">Max DD %</th><th>Beta</th></tr></thead>
+            <thead><tr><th>Line</th><th title="Compound annual growth rate over the period">CAGR %</th><th title="Return for the period, %">Ret % period</th><th title="Volatility, % a year">Vol %</th><th title="Sharpe ratio versus the liquid fund">Sharpe</th><th title="Worst drawdown in the period, %">Max DD %</th><th>Beta</th></tr></thead>
             <tbody id="ts-stats"></tbody>
           </table>
         </div>
-        <p class="note">CAGR compounds the period return over its actual days; † = period under a year, so CAGR and Sharpe are extrapolations. Ret % period is the plain, realised return. Sharpe = (CAGR − 5%) ÷ Vol. Volatility, Sharpe (risk-free 5%) and beta from daily returns inside the period; beta is against Nifty 50. * = launched after the period start, measured from launch.</p>
+        <p class="note">CAGR compounds the period return over its actual days; † = period under a year, so CAGR and Sharpe are extrapolations. Ret % period is the plain, realised return. Sharpe = (CAGR − liquid-fund CAGR for the same period) ÷ volatility. Volatility and beta use daily returns inside the period; beta is against Nifty 50. * = launched after the period start, measured from launch.</p>
       </div>
     </div>
-    <p class="note">Pick a period with the window buttons, the date boxes, or by dragging across the strip under the chart (drag the shaded box to move it, click outside it to reset). It applies to every metric. Growth rebases each line to 100 at the period start (or at launch if later); drawdown is measured from the peak inside the period. Trailing 6- and 12-month returns are the plain return over the past 182 or 365 days at each date, so a fund appears once it is that old; the 6-month Sharpe annualises that return, subtracts 5% and divides by the 6-month volatility. Rolling volatility is annualised; rolling 60-day beta needs 40 of the last 60 sessions, 20-day beta 15 of the last 20. The 20-day beta reacts fast but is noisy: one big Nifty day moves it a lot. The category and window also set the scoreboard and scatter.</p>
+    <p class="note">Pick a period with the window buttons, the date boxes, or by dragging across the strip under the chart (drag the shaded box to move it, click outside it to reset). It applies to every metric. Growth rebases each line to 100 at the period start (or at launch if later); drawdown is measured from the peak inside the period. Trailing 6- and 12-month returns are the plain return over the past 182 or 365 days at each date, so a fund appears once it is that old; the 6-month Sharpe annualises that return, subtracts the liquid fund’s annualised return over the same dates and divides by the 6-month volatility. Rolling volatility is annualised; rolling 60-day beta needs 40 of the last 60 sessions, 20-day beta 15 of the last 20. The 20-day beta reacts fast but is noisy: one big Nifty day moves it a lot. The category and window also set the scoreboard and scatter.</p>
   </section>
 
   <section class="sif-panel" id="scoreboard">
     <header><h2>Scoreboard</h2><span class="sif-seg" id="sif-annual" role="group" aria-label="Return basis"><button type="button" data-annual="annual" class="on" aria-pressed="true">CAGR (annualised)</button><button type="button" data-annual="period">% for the period</button></span></header>
-    <p class="note">Direct Plan Growth. Returns from 3M up are shown as CAGR by default (compounded over the actual days), so funds of different ages compare on one footing. <b>† marks a CAGR or Sharpe ratio annualised from less than a year of data: an extrapolation of the period's pace, not a realised return.</b> 1M stays the plain month's return, since a month compounded to a year is noise. Days live counts calendar days from the first NAV to the latest. Click a column to sort.</p>
+    <p class="note">Direct Plan Growth. Returns from 3M up are shown as CAGR by default (compounded over the actual days), so funds of different ages compare on one footing. <b>† marks a CAGR, alpha or Sharpe ratio annualised from less than a year of data: an extrapolation of the period's pace, not a realised return.</b> 1M stays the plain month's return, since a month compounded to a year is noise. Days live counts calendar days from the first NAV to the latest. Click a column to sort.</p>
     <div class="sif-tablewrap">
       <table id="score-table" data-source="funds" data-row-key="id">
         <thead><tr>
@@ -271,8 +271,8 @@
           <th data-field="beta_dimson"><button type="button" data-sort="beta_dimson">Beta lag-adj</button></th>
           <th data-field="beta_60d"><button type="button" data-sort="beta_60d">Beta 60d</button></th>
           <th data-field="beta_20d"><button type="button" data-sort="beta_20d">Beta 20d</button></th>
-          <th data-field="beta60_max_12m"><button type="button" data-sort="beta60_max_12m">|Beta 60d| high, 12M</button></th>
-          <th data-field="beta60_min_12m"><button type="button" data-sort="beta60_min_12m">|Beta 60d| low, 12M</button></th>
+          <th data-field="beta60_max_12m"><button type="button" data-sort="beta60_max_12m">Beta 60d high, 12M</button></th>
+          <th data-field="beta60_min_12m"><button type="button" data-sort="beta60_min_12m">Beta 60d low, 12M</button></th>
           <th data-field="alpha"><button type="button" data-sort="alpha">Alpha</button></th>
           <th data-field="sharpe_life"><button type="button" data-sort="sharpe_life">Sharpe since launch</button></th>
           <th data-field="sharpe_6m"><button type="button" data-sort="sharpe_6m">Sharpe 6M</button></th>
@@ -285,7 +285,7 @@
         <tbody data-draw="score" data-source="funds families"></tbody>
       </table>
     </div>
-    <p class="note">Vol: annualised standard deviation of daily returns. Beta: slope against Nifty 50 daily returns. Lag-adjusted beta adds the previous day's Nifty move, which catches stale prices. Alpha: CAGR minus beta × Nifty CAGR minus (1 − beta) × 7.5% debt, shown once a fund has six months of NAVs. Sharpe: (annualised return − 5% risk-free) ÷ annualised volatility of daily returns over the same window; since launch shown from three months of NAVs; not shown for debt at 6.5% and the liquid fund, whose near-zero volatility makes it meaningless. 12M high and low: the highest and lowest value of the rolling 60-day volatility and of the absolute rolling 60-day beta over the last 12 months, or since the first full 60-day window for younger funds; hover a cell for the date. Capture: the fund's summed return on Nifty up (or down) days as a share of Nifty's. AUM: the latest figure Groww reports for each fund; * marks a figure newer than the fund's 30 Sep 2026 portfolio (Groww does not state its month-end); hover for the 30 Sep figure.</p>
+    <p class="note">Vol: annualised standard deviation of daily returns. Beta: slope against Nifty 50 daily returns. Lag-adjusted beta adds the previous day's Nifty move, which catches stale prices. Alpha: CAGR minus beta × Nifty 50 total-return proxy CAGR minus (1 − beta) × liquid-fund CAGR, shown once a fund has six months of NAVs. Sharpe: (annualised return − liquid-fund annualised return) ÷ annualised volatility of daily returns over the same window; since launch shown from three months of NAVs; not shown for debt at 6.5% and the liquid fund, whose near-zero volatility makes it meaningless. 12M high and low: the highest and lowest value of the rolling 60-day volatility and of the signed rolling 60-day beta over the last 12 months, or since the first full 60-day window for younger funds; hover a cell for the date. Capture: the fund's summed return on Nifty up (or down) days as a share of Nifty's. AUM: the latest figure Groww reports for each fund; * marks a figure newer than the fund's 30 Sep 2026 portfolio (Groww does not state its month-end); hover for the 30 Sep figure.</p>
   </section>
 
   <section class="sif-panel" id="construction">

@@ -315,7 +315,7 @@
           const isBeta = c.startsWith('beta') || c.startsWith('sharpe');
           const isPct = isRet || c.startsWith('vol') || c === 'max_dd' || c === 'dd_now' || c.endsWith('capture');
           const young = Number.isFinite(f.span_days) && f.span_days < 365;
-          const extrap = Number.isFinite(v) && ((S.annual && (c === 'ret_3m' || c === 'ret_6m' || (c === 'ret_inception' && young))) || c === 'sharpe_6m' || (c === 'sharpe_life' && young));
+          const extrap = Number.isFinite(v) && ((S.annual && (c === 'ret_3m' || c === 'ret_6m' || (c === 'ret_inception' && young))) || c === 'sharpe_6m' || ((c === 'sharpe_life' || c === 'alpha') && young));
           td.textContent = c === 'days_live' ? fx(v, f0) : fx(v, isBeta ? f2 : isRet ? sg1 : (c.endsWith('capture') ? f0 : f1)) + (isPct && Number.isFinite(v) ? '%' : '') + (extrap ? '†' : '');
           if (extrap) td.title = 'Annualised from less than a year of data: an extrapolation, not a realised return';
           if (f[c + '_date']) td.title = 'on ' + fmtDate(parseDate(f[c + '_date']));
@@ -328,7 +328,7 @@
   });
 
   // ---------- time series ----------
-  const TS_TITLE = { idx: 'Growth of ₹100', dd: 'Drawdown from peak, %', vol60: 'Rolling 60-day volatility, % a year', vol20: 'Rolling 20-day volatility, % a year', beta60: 'Rolling 60-day beta to Nifty 50', beta20: 'Rolling 20-day beta to Nifty 50', ret6m: 'Trailing 6-month return, %', ret12m: 'Trailing 12-month return, %', sharpe6m: 'Trailing 6-month Sharpe ratio (risk-free 5%)' };
+  const TS_TITLE = { idx: 'Growth of ₹100', dd: 'Drawdown from peak, %', vol60: 'Rolling 60-day volatility, % a year', vol20: 'Rolling 20-day volatility, % a year', beta60: 'Rolling 60-day beta to Nifty 50', beta20: 'Rolling 20-day beta to Nifty 50', ret6m: 'Trailing 6-month return, %', ret12m: 'Trailing 12-month return, %', sharpe6m: 'Trailing 6-month Sharpe ratio versus the liquid fund' };
   dash.draw('tstitle', (el) => { el.textContent = TS_TITLE[S.metric]; });
 
   function chartFrame(el, height) {
@@ -471,6 +471,8 @@
     if (!tb) return;
     const D = daily(); const nr = new Map();
     const nf = (D.get('nifty50') || []);
+    const liquid = D.get('liquid') || [];
+    const liquidOnOrBefore = d3.bisector((r) => r.date).right;
     for (let i = 1; i < nf.length; i++) nr.set(nf[i].ds, nf[i].idx / nf[i - 1].idx - 1);
     tb.replaceChildren();
     const rowsS = series.map((s) => {
@@ -489,7 +491,11 @@
       } else if (s.id === 'nifty50') beta = 1;
       const days = Math.max((a[a.length - 1].date - a[0].date) / 864e5, 1);
       const ann = (Math.pow(1 + ret / 100, 365 / days) - 1) * 100;
-      const sh = NO_SHARPE.has(s.id) || !Number.isFinite(vol) || vol <= 0 ? NaN : (ann / 100 - 0.05) / (vol / 100);
+      const first = liquid[liquidOnOrBefore(liquid, a[0].date) - 1];
+      const last = liquid[liquidOnOrBefore(liquid, a[a.length - 1].date) - 1];
+      const liquidReturn = first && last && last.date > first.date
+        ? (Math.pow(last.idx / first.idx, 365 / days) - 1) * 100 : NaN;
+      const sh = NO_SHARPE.has(s.id) || !(vol > 0) ? NaN : (ann - liquidReturn) / vol;
       return { s, ret, ann, vol, sh, mdd, beta, from: a[0].date, short: days < 365 };
     }).sort((p, q) => q.ann - p.ann);
     for (const r of rowsS) {
@@ -1043,7 +1049,7 @@
         const a = document.createElement('article'); a.style.setProperty('--c', c.c);
         const h = document.createElement('h4'); h.textContent = r.strategy + ' · ' + r.family + ' (' + r.amc + ')'; a.append(h);
         const facts = document.createElement('div'); facts.className = 'facts';
-        const ter = Number.isFinite(r.ter) ? (r.ter > 5 ? f2(r.ter) + '% as filed (looks wrong)' : f2(r.ter) + '%' + (r.ter_source === 'Groww' ? ' (Groww)' : '')) : '–';
+        const ter = Number.isFinite(r.ter) ? (r.ter > 3 ? f2(r.ter) + '% as filed (verify)' : f2(r.ter) + '%' + (r.ter_source === 'Groww' ? ' (Groww)' : '')) : '–';
         const fr = (funds() || []).find((x) => x.id === r.code);
         for (const [k, v] of [['Type', r.type ? r.type.toLowerCase() : 'n/a'], ['NFO opened', r.launch ? fmtDate(parseDate(r.launch)) : '–'], ['Live for', fr && Number.isFinite(fr.days_live) ? fr.days_live + ' days' : '–'], ['AUM 30 Sep', Number.isFinite(r.aum) ? fcr(r.aum) : 'not yet disclosed'],
           ['Benchmark', r.benchmark || 'not on AMFI'], ['Expense, direct', ter], ['Risk level (1-5)', Number.isFinite(r.risk) ? String(r.risk) : '–'], ['Exit load', r.exit_load || '–']]) {

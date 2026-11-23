@@ -28,7 +28,6 @@ RAW = ROOT / "data" / "monitor" / "raw"
 OUT = ROOT / "data" / "monitor" / "out"
 DEBT = 0.075
 AN = 252
-RF = 0.05  # risk-free rate for Sharpe ratios, % a year
 
 
 def load():
@@ -65,8 +64,8 @@ def ols_beta(y: np.ndarray, x: np.ndarray) -> float:
     return float(np.cov(y, x, ddof=1)[0, 1] / np.var(x, ddof=1))
 
 
-def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series) -> dict:
-    """s: NAV series on its own dates (sorted). nifty, liquid: on the trading calendar."""
+def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series, tri: pd.Series | None = None) -> dict:
+    """s: NAV series on its own dates (sorted). nifty (price, for beta), liquid (risk-free proxy), tri (Nifty 50 TRI, for alpha): on the trading calendar."""
     s = s.dropna()
     n = nifty.reindex(s.index).ffill()
     lq = liquid.reindex(s.index).ffill()
@@ -87,9 +86,18 @@ def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series) -> dict:
         g = last / b0
         return ((g ** (365 / dd_) - 1) if ann else (g - 1)) * 100
 
-    def sharpe(ann_ret, x):
+    def lq_ann(start):
+        """Annualised liquid-fund return from `start` to the last date: the risk-free rate for that window."""
+        base = lq[lq.index <= start]
+        b0, bd = (base.iloc[-1], base.index[-1]) if len(base) else (lq.iloc[0], lq.index[0])
+        days = max((d1 - bd).days, 1)
+        return (lq.iloc[-1] / b0) ** (365 / days) - 1 if np.isfinite(b0) and b0 > 0 else np.nan
+
+    def sharpe(ann_ret, x, start):
+        """(annualised return - liquid-fund return over the same window) / annualised volatility."""
         v_ = vol(x)
-        return (ann_ret / 100 - RF) / (v_ / 100) if (np.isfinite(ann_ret) and v_ and np.isfinite(v_)) else np.nan
+        rf = lq_ann(start)
+        return (ann_ret / 100 - rf) / (v_ / 100) if (np.isfinite(ann_ret) and np.isfinite(rf) and v_ and np.isfinite(v_)) else np.nan
 
     def vol(x):
         return float(x.std(ddof=1) * np.sqrt(AN) * 100) if len(x) >= 15 else np.nan
@@ -104,8 +112,11 @@ def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series) -> dict:
         beta_dimson = np.nan
     r60, rn60 = r.iloc[-60:], rn.iloc[-60:]
     cagr = ((last / first) ** (1 / yrs) - 1) * 100 if yrs > 0 else np.nan
-    n_cagr = ((n.iloc[-1] / n.iloc[0]) ** (1 / yrs) - 1) * 100 if yrs > 0 else np.nan
-    alpha = cagr - (beta * n_cagr + (1 - beta) * DEBT * 100) if not np.isnan(beta) else np.nan
+    t = (tri if tri is not None else nifty).reindex(s.index).ffill()
+    t_cagr = ((t.iloc[-1] / t.iloc[0]) ** (1 / yrs) - 1) * 100 if yrs > 0 else np.nan
+    lq_cagr = ((lq.iloc[-1] / lq.iloc[0]) ** (1 / yrs) - 1) * 100 if yrs > 0 else np.nan
+    # alpha against a beta-matched mix of Nifty 50 TRI and the liquid fund over the same dates
+    alpha = cagr - (beta * t_cagr + (1 - beta) * lq_cagr) if not np.isnan(beta) else np.nan
     up, dn = rn > 0, rn < 0
     up_cap = r[up].sum() / rn[up].sum() * 100 if rn[up].sum() else np.nan
     dn_cap = r[dn].sum() / rn[dn].sum() * 100 if rn[dn].sum() else np.nan
@@ -131,16 +142,18 @@ def stats(s: pd.Series, nifty: pd.Series, liquid: pd.Series) -> dict:
         # annualised versions of every window (compound, actual days), so funds of any age compare on one footing
         ret_1m_ann=ret_since(30, True), ret_3m_ann=ret_since(91, True), ret_6m_ann=ret_since(182, True),
         ret_1y_ann=ret_since(365, True), ret_inception_ann=(((last / first) ** (365 / max((d1 - d0).days, 1)) - 1) * 100) if yrs >= 0.25 else np.nan,
-        # Sharpe ratio: (annualised return - 5%) / annualised volatility of daily returns over the same window
-        sharpe_life=sharpe((((last / first) ** (365 / max((d1 - d0).days, 1)) - 1) * 100) if yrs >= 0.25 else np.nan, r),
-        sharpe_6m=sharpe(ret_since(182, True), r[r.index > d1 - pd.Timedelta(days=182)]),
-        sharpe_1y=sharpe(ret_since(365, True), r[r.index > d1 - pd.Timedelta(days=365)]),
+        # Sharpe ratio: (annualised return - liquid-fund return over the same window) / annualised volatility of daily returns
+        sharpe_life=sharpe((((last / first) ** (365 / max((d1 - d0).days, 1)) - 1) * 100) if yrs >= 0.25 else np.nan, r, d0),
+        sharpe_6m=sharpe(ret_since(182, True), r[r.index > d1 - pd.Timedelta(days=182)], d1 - pd.Timedelta(days=182)),
+        sharpe_1y=sharpe(ret_since(365, True), r[r.index > d1 - pd.Timedelta(days=365)], d1 - pd.Timedelta(days=365)),
     )
 
 
-def rolling(s: pd.Series, nifty: pd.Series) -> pd.DataFrame:
+def rolling(s: pd.Series, nifty: pd.Series, liquid: pd.Series | None = None) -> pd.DataFrame:
     s = s.dropna()
     n = nifty.reindex(s.index).ffill()
+    lq = liquid.reindex(s.index).ffill() if liquid is not None else None
+    rf6 = (((1 + trailing(lq, 182) / 100) ** (365 / 182) - 1) if lq is not None else np.nan)
     r, rn = s.pct_change(), n.pct_change()
     cov = r.rolling(60, min_periods=40).cov(rn)
     var = rn.rolling(60, min_periods=40).var()
@@ -151,7 +164,7 @@ def rolling(s: pd.Series, nifty: pd.Series) -> pd.DataFrame:
         beta60=cov / var,
         beta20=r.rolling(20, min_periods=15).cov(rn) / rn.rolling(20, min_periods=15).var(),
         ret6m=trailing(s, 182), ret12m=trailing(s, 365),
-        sharpe6m=(((1 + trailing(s, 182) / 100) ** (365 / 182) - 1) - RF) / (r.rolling("182D", min_periods=100).std() * np.sqrt(AN)),
+        sharpe6m=(((1 + trailing(s, 182) / 100) ** (365 / 182) - 1) - rf6) / (r.rolling("182D", min_periods=100).std() * np.sqrt(AN)),
     ))
 
 
@@ -175,7 +188,7 @@ def main() -> None:
         s = s[~s.index.duplicated(keep="last")]
         series[st.code] = s
         meta.append(dict(id=st.code, kind="SIF", brand=st.brand, sponsor=st.sponsor if isinstance(st.sponsor, str) else "",
-                         name=st.scheme, category=st.category, isin=st.isin))
+                         name=st.scheme, category=st.category, isin=st["isin"] if isinstance(st["isin"], str) else ""))
     bench_meta = {
         "nifty50": ("Nifty 50", "Nifty 50 price index (Yahoo ^NSEI)"),
         "nifty_tri": ("Nifty 50 TRI", "UTI Nifty 50 Index Fund, Direct (AMFI 120716)"),
@@ -197,19 +210,17 @@ def main() -> None:
         s = series[m["id"]]
         if len(s) < 2:
             continue
-        rd = rolling(s, nifty)
+        rd = rolling(s, nifty, liquid)
         # range of the rolling 60-day beta and volatility over the last 12 months (or since the first full window)
         last12 = rd[rd.index > rd.index.max() - pd.Timedelta(days=365)]
         rng = {}
         for col, key in (("beta60", "beta"), ("vol60", "vol")):
             v = last12[col].dropna()
-            if key == "beta":
-                v = v.abs()
             rng[f"{key}60_max_12m"] = float(v.max()) if len(v) else np.nan
             rng[f"{key}60_min_12m"] = float(v.min()) if len(v) else np.nan
             rng[f"{key}60_max_12m_date"] = v.idxmax().strftime("%Y-%m-%d") if len(v) else ""
             rng[f"{key}60_min_12m_date"] = v.idxmin().strftime("%Y-%m-%d") if len(v) else ""
-        rows.append({**m, **stats(s, nifty, liquid), **rng})
+        rows.append({**m, **stats(s, nifty, liquid, b["nifty_tri"]), **rng})
         rd.insert(0, "id", m["id"])
         daily.append(rd)
     funds = pd.DataFrame(rows)

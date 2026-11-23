@@ -54,13 +54,13 @@ def _pick(d: dict, *need: str, avoid: tuple = ()) -> str:
 
 def _ter_direct(txt: str) -> str:
     """Direct-plan expense ratio from the SSD's free text, in % (some AMCs file 0.0043 for 0.43%)."""
-    m = re.search(r"direct[^0-9]{0,40}?([0-9]*\.?[0-9]+(?:e-?\d+)?)", txt or "", re.I)
+    m = re.search(r"direct[^0-9]{0,40}?([0-9]*\.?[0-9]+(?:e[+-]?\d+)?)\s*(%?)", txt or "", re.I)
     if not m:
-        m = re.fullmatch(r"\s*(?:upto\s*)?([0-9]*\.?[0-9]+)\s*%?\s*(?:\(groww\))?\s*", txt or "", re.I)
+        m = re.fullmatch(r"\s*(?:upto\s*)?([0-9]*\.?[0-9]+)\s*(%?)\s*(?:\(groww\))?\s*", txt or "", re.I)
     if not m:
         return ""
     v = float(m.group(1))
-    return f"{v * 100:.2f}" if v < 0.2 else f"{v:.2f}"
+    return f"{v * 100:.2f}" if not m.group(2) and v < 0.2 else f"{v:.2f}"
 
 
 def _risk(txt: str) -> str:
