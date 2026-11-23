@@ -168,22 +168,23 @@
     <h2>AUM at each month-end, all hybrid long-short funds</h2>
     <div class="sif-controls"><span class="sif-seg" id="m-scale" role="group" aria-label="Scale"><button type="button" data-mscale="log" class="on" aria-pressed="true">Log scale</button><button type="button" data-mscale="linear">Linear</button></span></div>
     <div class="sif-chart" data-draw="mAum" data-source="monthly families"></div>
-    <h2>Compare funds on one measure (same scale in every panel)</h2>
+    <h2>Compare funds on one measure, % of each fund's total NAV (same scale in every panel)</h2>
     <div class="sif-controls"><label for="m-metric">Measure <select class="dash-select" id="m-metric" aria-label="Measure">
       <option value="fi">Fixed income (debt + T-bills/G-secs + money market + cash), % of NAV</option><option value="tb">T-bills and G-secs (sovereign), % of NAV</option><option value="eq">Net equity (shares + futures), % of NAV</option>
-      <option value="calls">Stocks with options written on them, % of NAV</option><option value="arb">Arbitrage book (stock + short future), % of NAV</option><option value="nl">Net non-large-cap exposure, % of NAV</option></select></label>
+      <option value="calls">Stocks with options written on them, % of NAV</option><option value="arb">Arbitrage book (stock + short future), % of NAV</option><option value="nlg">Net large cap (top 100), % of NAV</option><option value="nmid">Net mid cap (101–250), % of NAV</option><option value="nsm">Net small cap (251+), % of NAV</option></select></label>
       <span class="sif-seg" id="m-layout" role="group" aria-label="Layout"><button type="button" data-mlayout="panels" class="on" aria-pressed="true">One panel per fund</button><button type="button" data-mlayout="together">All on one chart</button></span></div>
     <div class="sif-chart sm" data-draw="mPeers" data-source="monthly families"></div>
     <h2>One fund in detail</h2>
-    <div class="sif-controls"><label for="m-fund">Fund <select class="dash-select" id="m-fund" aria-label="Fund" data-draw="mFundSel" data-source="monthly families"></select></label></div>
+    <div class="sif-controls"><label for="m-fund">Fund <select class="dash-select" id="m-fund" aria-label="Fund" data-draw="mFundSel" data-source="monthly families"></select></label>
+      <span class="sif-seg" id="m-basis" role="group" aria-label="Show bars as"><button type="button" data-mbasis="nav" class="on" aria-pressed="true">% of total NAV</button><button type="button" data-mbasis="sleeve">% within the sleeve (each bar = 100)</button></span></div>
     <p class="note" data-draw="mFundNote" data-source="monthly families">—</p>
-    <h2>Fixed income, % of NAV (bold = total): corporate debt, T-bills and G-secs, money market, cash</h2>
+    <h2>Fixed income sleeve: corporate debt, T-bills and G-secs, money market, cash (bold = fixed income as % of total NAV)</h2>
     <div class="sif-chart sm" data-draw="mCash" data-source="monthly families"></div>
-    <h2>Long stock by market-cap band, % of NAV</h2>
+    <h2>Equity sleeve: shares held by market-cap band (bold = shares as % of total NAV; large = top 100 by AMFI rank, mid = 101–250, small = 251+)</h2>
     <div class="sif-chart sm" data-draw="mCap" data-source="monthly families"></div>
-    <h2>Net equity exposure after futures, % of NAV</h2>
+    <h2>Net equity exposure after futures, % of total NAV</h2>
     <div class="sif-chart sm" data-draw="mNet" data-source="monthly families"></div>
-    <h2>Where each rupee sits, decoded stock by stock</h2>
+    <h2>Where each rupee of the whole fund sits, % of total NAV (adds to 100)</h2>
     <div class="sif-chart" data-draw="mStrat" data-source="monthly families"></div>
     <p class="note">Source: AMC month-end portfolio disclosures as extracted into the research workbook (checked: its summary table recomputes exactly from its holdings sheet; totals agree with official AMC files and Groww copies within about 0.2 points where we hold them). Strategies are decoded per stock from its shares, its own futures and its own options with the same classifier as the main dashboard. Market-cap bands use AMFI's Jan–Jun 2026 rank list for every month, so older months are indicative. Month-end snapshots only.</p>
   </section>

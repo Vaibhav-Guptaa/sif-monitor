@@ -1110,7 +1110,7 @@
     el.replaceChildren(tbl);
   });
   // ---------- Monthly portfolios (view #monthly): AMC month-end disclosures from the research workbook ----------
-  const MS = { fund: null, scale: 'log', metric: 'fi', layout: 'panels' };
+  const MS = { fund: null, scale: 'log', metric: 'fi', layout: 'panels', basis: 'nav' };
   const mrows = () => {
     const d = rows('monthly'); if (!d) return null; if (cache.has(d)) return cache.get(d);
     const o = d.map((r) => { const q = { ...r }; for (const k of Object.keys(r)) if (!['fund', 'month', 'asof', 'opt_note'].includes(k)) q[k] = num(r[k]); q.date = parseDate(String(r.asof).slice(0, 10)) || parseDate(r.month + '-01'); q.fi = q.tbills + q.mm_other + q.corp_debt + q.gsec + q.treps_cash; q.sov = q.tbills + q.gsec; q.calls = q.s_calls + q.s_both + q.s_untyped; return q; });
@@ -1129,26 +1129,30 @@
   function drawStack(el, A, series, opt = {}) {
     const H = opt.h || 290; const { svg, tip, W } = chartFrame(el, H);
     const m = { t: 20, r: 8, b: 30, l: 36 };
-    const tot = A.map((r) => d3.sum(series, (q) => Math.max(0, q.f(r) || 0)));
+    const rawTot = A.map((r) => d3.sum(series, (q) => Math.max(0, q.f(r) || 0)));
+    const norm = !!opt.norm, scaleOf = (i) => (norm && rawTot[i] > 0 ? 100 / rawTot[i] : 1);
+    const tot = norm ? rawTot.map((t) => (t > 0 ? 100 : 0)) : rawTot;
     const x = d3.scaleBand().domain(A.map((r) => r.month)).range([m.l, W - m.r]).padding(0.2);
-    const y = d3.scaleLinear().domain([0, opt.ymax || Math.ceil((d3.max(tot) || 10) / 10) * 10 + (opt.total ? 6 : 0)]).range([H - m.b, m.t]);
+    const y = d3.scaleLinear().domain([0, norm ? 108 : (opt.ymax || Math.ceil((d3.max(tot) || 10) / 10) * 10 + (opt.total ? 6 : 0))]).range([H - m.b, m.t]);
     svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r)).tickFormat(''));
     svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5));
     svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickFormat((mo) => fmtMon(parseDate(mo + '-01'))).tickSizeOuter(0));
-    A.forEach((r) => {
-      let acc = 0;
+    A.forEach((r, ri) => {
+      let acc = 0; const k = scaleOf(ri);
       for (const q of series) {
-        const v = Math.max(0, q.f(r) || 0); if (v <= 0) continue;
+        const v = Math.max(0, q.f(r) || 0) * k; if (v <= 0) continue;
         svg.append('rect').attr('x', x(r.month)).attr('width', x.bandwidth()).attr('y', y(acc + v)).attr('height', Math.max(0, y(acc) - y(acc + v))).style('fill', q.c).style('stroke', '#fff').style('stroke-width', 0.5);
         if (v >= 3.5 && x.bandwidth() > 22 && y(acc) - y(acc + v) > 11) svg.append('text').attr('x', x(r.month) + x.bandwidth() / 2).attr('y', y(acc + v / 2)).attr('dy', '0.35em').attr('text-anchor', 'middle').text(f0(v)).style('fill', q.dark ? '#111' : '#fff').style('font-size', '9.5px').style('pointer-events', 'none');
         acc += v;
       }
-      if (opt.total) svg.append('text').attr('x', x(r.month) + x.bandwidth() / 2).attr('y', y(acc) - 4).attr('text-anchor', 'middle').text(f0(acc) + '%').style('font-weight', 700).style('font-size', '10px').style('fill', 'var(--color-fg)');
+      if (opt.total) svg.append('text').attr('x', x(r.month) + x.bandwidth() / 2).attr('y', y(acc) - 4).attr('text-anchor', 'middle').text(norm ? '= ' + f0(rawTot[ri]) + '% of NAV' : f0(acc) + '%').style('font-weight', 700).style('font-size', '10px').style('fill', 'var(--color-fg)');
       svg.append('rect').attr('x', x(r.month) - 2).attr('width', x.bandwidth() + 4).attr('y', m.t).attr('height', H - m.t - m.b).style('fill', 'transparent')
         .on('pointerenter pointermove', (ev) => {
           tip.attr('hidden', null).html('');
           tip.append('div').text(fmtMon(r.date) + ' · AUM ₹' + f0(r.aum_cr) + ' cr').style('font-weight', 600);
-          for (const q of series) { const v = q.f(r) || 0; if (Math.abs(v) < 0.05) continue; const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(q.l); a1.append('span').text(f1(v) + '%'); }
+          tip.append('div').text(norm ? 'Share of this sleeve (and of total NAV)' : '% of total NAV').style('color', 'var(--color-fg-muted)').style('font-size', '11px');
+          for (const q of series) { const v = q.f(r) || 0; if (Math.abs(v) < 0.05) continue; const a1 = tip.append('div').attr('class', 'row'); a1.append('span').text(q.l); a1.append('span').text(norm ? f1(v * scaleOf(ri)) + '% (' + f1(v) + '% of NAV)' : f1(v) + '% of NAV'); }
+          if (opt.total) { const a2 = tip.append('div').attr('class', 'row'); a2.append('span').text('Sleeve total').style('font-weight', 600); a2.append('span').text(f1(rawTot[ri]) + '% of NAV').style('font-weight', 600); }
           const [px] = d3.pointer(ev, el); const tw = tip.node().offsetWidth; tip.style('left', Math.max(0, Math.min(px + 12, W - tw - 4)) + 'px').style('top', '10px');
         }).on('pointerleave', () => tip.attr('hidden', ''));
     });
@@ -1184,13 +1188,13 @@
   dash.draw('mNote', (el) => {
     const R = mrows(); if (!R) { el.textContent = '—'; return; }
     const gaps = [...new Set(R.filter((r) => r.deriv_ok === 0).map((r) => r.fund))];
-    el.textContent = 'Month-end portfolios Oct 2025 – Oct 2026 for ' + new Set(R.map((r) => r.fund)).size + ' funds, taken from the AMCs\' own monthly disclosures. ' + (gaps.length ? 'No futures or options rows were captured for ' + gaps.join(', ') + ', so their net equity, arbitrage and option figures are not shown (their cash, debt and cap figures are fine).' : '');
+    el.textContent = 'Month-end portfolios Oct 2025 – Oct 2026 for ' + new Set(R.map((r) => r.fund)).size + ' funds, taken from the AMCs\' own monthly disclosures. Every percentage is of the fund\'s total NAV (the whole fund: shares, bonds and cash together) unless a chart says "within sleeve". ' + (gaps.length ? 'No futures or options rows were captured for ' + gaps.join(', ') + ', so their net equity, arbitrage and option figures are not shown (their cash, debt and cap figures are fine).' : '');
   });
   dash.draw('mAum', (el) => {
     const F = mfunds(); if (!F.length) { failNote(el, dash.data('monthly').status); return; }
     drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.map((r) => ({ date: r.date, m: r.month, v: r.aum_cr })) })), { log: MS.scale === 'log', fmt: (v) => '₹' + f0(v) + ' cr', h: 360 });
   });
-  const MLABEL = { fi: 'Fixed income', tb: 'T-bills and G-secs', eq: 'Net equity', calls: 'Stocks with options written', arb: 'Arbitrage book', nl: 'Net non-large cap' };
+  const MLABEL = { fi: 'Fixed income', tb: 'T-bills and G-secs', eq: 'Net equity', calls: 'Stocks with options written', arb: 'Arbitrage book', nlg: 'Net large cap (top 100)', nmid: 'Net mid cap (101–250)', nsm: 'Net small cap (251+)' };
   function drawPanels(el, F, key, needDeriv) {
     el.replaceChildren();
     const W0 = el.clientWidth || 900, cols = W0 > 1000 ? 4 : W0 > 700 ? 3 : W0 > 460 ? 2 : 1;
@@ -1204,7 +1208,7 @@
       const cell = document.createElement('div'); cell.style.minWidth = '0';
       const h = document.createElement('div'); h.style.cssText = 'font-size:12.5px;font-weight:600;margin-bottom:2px';
       const last = A.length ? A[A.length - 1] : null;
-      h.textContent = mname(g.f) + (last ? ' · latest ' + f0(last[key]) + '% (' + fmtMon(last.date) + ')' : ' · not available');
+      h.textContent = mname(g.f) + (last ? ' · latest ' + f0(last[key]) + '% of NAV (' + fmtMon(last.date) + ')' : ' · not available');
       cell.append(h); grid.append(cell);
       const box = document.createElement('div'); cell.append(box);
       const W = Math.max(200, (W0 - 18 * (cols - 1)) / cols), H = 170, m = { t: 8, r: 22, b: 22, l: 30 };
@@ -1220,9 +1224,9 @@
   }
   dash.draw('mPeers', (el) => {
     const F = mfunds(); if (!F.length) { failNote(el, dash.data('monthly').status); return; }
-    const M = { fi: ['fi', false], tb: ['sov', false], eq: ['net_equity', true], calls: ['calls', true], arb: ['s_arb', true], nl: ['net_nonlarge', true] }[MS.metric];
+    const M = { fi: ['fi', false], tb: ['sov', false], eq: ['net_equity', true], calls: ['calls', true], arb: ['s_arb', true], nlg: ['net_large', true], nmid: ['net_mid', true], nsm: ['net_small', true] }[MS.metric];
     if (MS.layout !== 'together') { drawPanels(el, F, M[0], M[1]); return; }
-    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.filter((r) => !M[1] || r.deriv_ok === 1).map((r) => ({ date: r.date, m: r.month, v: r[M[0]] })) })).filter((it) => it.pts.length), { fmt: (v) => f1(v) + '%', h: 340 });
+    drawLines(el, F.map((g) => ({ name: mname(g.f), c: mfcol(g.f), pts: g.a.filter((r) => !M[1] || r.deriv_ok === 1).map((r) => ({ date: r.date, m: r.month, v: r[M[0]] })) })).filter((it) => it.pts.length), { fmt: (v) => f1(v) + '% of total NAV', h: 340 });
   });
   const curFund = () => { const F = mfunds(); if (!F.length) return null; return F.find((g) => g.f === MS.fund) || F[0]; };
   dash.draw('mFundSel', (el) => {
@@ -1241,18 +1245,21 @@
   dash.draw('mCash', (el) => {
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
     drawStack(el, g.a, [{ l: 'Corporate bonds and other debt', c: MCOL.corp, f: (r) => r.corp_debt }, { l: 'T-bills and G-secs (sovereign)', c: MCOL.tb, f: (r) => r.tbills + r.gsec },
-      { l: 'Other money market (CP, CD)', c: MCOL.mm, dark: true, f: (r) => r.mm_other }, { l: 'Cash, TREPS, receivables', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }], { total: true });
+      { l: 'Other money market (CP, CD)', c: MCOL.mm, dark: true, f: (r) => r.mm_other }, { l: 'Cash, TREPS, receivables', c: MCOL.cash, dark: true, f: (r) => r.treps_cash }], { total: true, norm: MS.basis === 'sleeve' });
   });
   dash.draw('mCap', (el) => {
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
-    drawStack(el, g.a, [{ l: 'Large cap (rank 1–100)', c: MCOL.large, f: (r) => r.long_large }, { l: 'Mid cap (101–250)', c: MCOL.mid, f: (r) => r.long_mid }, { l: 'Small cap and unclassified (251+)', c: MCOL.small, f: (r) => r.long_small + r.long_unclassified }], { total: true });
+    drawStack(el, g.a, [{ l: 'Large cap (top 100)', c: MCOL.large, f: (r) => r.long_large }, { l: 'Mid cap (101–250)', c: MCOL.mid, f: (r) => r.long_mid },
+      { l: 'Small cap (251+)', c: MCOL.small, f: (r) => r.long_small }, { l: 'Unclassified (listed after Jun 2026, not yet on AMFI\'s list)', c: '#9ca3af', dark: true, f: (r) => r.long_unclassified }],
+      { total: true, norm: MS.basis === 'sleeve' });
   });
   dash.draw('mNet', (el) => {
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
     const A = g.a.filter((r) => r.deriv_ok === 1);
     if (!A.length) { el.replaceChildren(); const p = document.createElement('p'); p.className = 'note'; p.textContent = 'Not shown: futures were not captured for this fund, so net exposure cannot be computed.'; el.append(p); return; }
-    drawLines(el, [{ name: 'Net large cap', c: MCOL.large, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_large })) }, { name: 'Net non-large cap', c: MCOL.small, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_nonlarge })) },
-      { name: 'Total net equity', c: '#111827', dash: '5 4', pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_equity })) }, { name: 'Arbitrage book', c: MCOL.arb, w: 1.4, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.s_arb })) }], { fmt: (v) => f1(v) + '%', h: 300 });
+    drawLines(el, [{ name: 'Net large cap (top 100)', c: MCOL.large, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_large })) }, { name: 'Net mid cap (101–250)', c: MCOL.mid, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_mid })) },
+      { name: 'Net small cap (251+)', c: MCOL.small, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_small })) }, ...(A.some((r) => Math.abs(r.net_unclassified) > 0.05) ? [{ name: 'Net unclassified', c: '#9ca3af', pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_unclassified })) }] : []),
+      { name: 'Total net equity', c: '#111827', dash: '5 4', pts: A.map((r) => ({ date: r.date, m: r.month, v: r.net_equity })) }, { name: 'Arbitrage book', c: MCOL.arb, w: 1.4, pts: A.map((r) => ({ date: r.date, m: r.month, v: r.s_arb })) }], { fmt: (v) => f1(v) + '% of total NAV', h: 300 });
   });
   dash.draw('mStrat', (el) => {
     const g = curFund(); if (!g) { failNote(el, dash.data('monthly').status); return; }
@@ -1349,6 +1356,8 @@
   root && root.addEventListener('click', (ev) => {
     const lt = ev.target.closest('button[data-ltab]');
     if (lt) { LS.tab = lt.dataset.ltab; LS.sort = null; for (const x of root.querySelectorAll('#l-tab button')) { x.classList.toggle('on', x === lt); x.setAttribute('aria-pressed', x === lt ? 'true' : 'false'); } dash.draw('lNote'); dash.draw('lTable'); return; }
+    const mb = ev.target.closest('button[data-mbasis]');
+    if (mb) { MS.basis = mb.dataset.mbasis; for (const x of root.querySelectorAll('#m-basis button')) { x.classList.toggle('on', x === mb); x.setAttribute('aria-pressed', x === mb ? 'true' : 'false'); } dash.draw('mCash'); dash.draw('mCap'); return; }
     const ml = ev.target.closest('button[data-mlayout]');
     if (ml) { MS.layout = ml.dataset.mlayout; for (const x of root.querySelectorAll('#m-layout button')) { x.classList.toggle('on', x === ml); x.setAttribute('aria-pressed', x === ml ? 'true' : 'false'); } dash.draw('mPeers'); return; }
     const b = ev.target.closest('button[data-mscale]');
